@@ -21,6 +21,7 @@ import models
 from cvr import fetch_daily_cvr, cvr_comparison
 from cvr_alarm import check_cvr_alarm
 from dependencies import get_db
+from funnel import fetch_funnel
 from quilt_alarm import check_quilt_alarm
 from shopify_sync import sync_store
 
@@ -66,7 +67,43 @@ def _order_stats(db: Session, store: models.Store, start, end) -> dict:
         .with_entities(func.count(func.distinct(models.Order.id)))
         .scalar()
     )
-    return {"orders": orders, "revenue": round(float(revenue or 0), 2), "quilt_orders": quilt_orders}
+    revenue = round(float(revenue or 0), 2)
+    aov = round(revenue / orders, 2) if orders else 0.0
+    return {"orders": orders, "revenue": revenue, "aov": aov, "quilt_orders": quilt_orders}
+
+
+def _top_products(db: Session, store: models.Store, start, end, limit: int = 5) -> list[dict]:
+    rows = (
+        db.query(
+            models.Product.product_name,
+            models.Product.category,
+            func.coalesce(func.sum(models.OrderItem.quantity), 0).label("qty"),
+            func.coalesce(
+                func.sum(models.OrderItem.quantity * models.OrderItem.unit_price), 0
+            ).label("revenue"),
+        )
+        .join(models.OrderItem, models.OrderItem.product_id == models.Product.id)
+        .join(models.Order, models.Order.id == models.OrderItem.order_id)
+        .filter(
+            models.Order.store_id == store.id,
+            models.Order.cancelled_at.is_(None),
+            models.Order.created_at >= start,
+            models.Order.created_at < end,
+        )
+        .group_by(models.Product.id, models.Product.product_name, models.Product.category)
+        .order_by(func.sum(models.OrderItem.quantity * models.OrderItem.unit_price).desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "name": name,
+            "category": category,
+            "quantity": int(qty),
+            "revenue": round(float(revenue), 2),
+        }
+        for name, category, qty, revenue in rows
+    ]
 
 
 def _pct_change(current, previous):
@@ -175,6 +212,47 @@ def dashboard_alerts(
         }
         for alert, title in rows
     ]
+
+
+@router.get("/top-products")
+def top_products(
+    days: int = Query(1, ge=1, le=90),
+    limit: int = Query(5, ge=1, le=20),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    if days == 1:
+        start, end = _local_day_range_utc(store, 0)
+    else:
+        start, _ = _local_day_range_utc(store, days - 1)
+        _, end = _local_day_range_utc(store, 0)
+    return {"days": days, "products": _top_products(db, store, start, end, limit)}
+
+
+@router.get("/orders-trend")
+def orders_trend(
+    days: int = Query(7, ge=2, le=90),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    result = []
+    for days_ago in range(days - 1, -1, -1):
+        start, end = _local_day_range_utc(store, days_ago)
+        stats = _order_stats(db, store, start, end)
+        result.append({"date": start.date().isoformat(), **stats})
+    return {"days": days, "trend": result}
+
+
+@router.get("/funnel")
+def funnel(shop: str | None = Query(None), db: Session = Depends(get_db)):
+    store = _get_store(db, shop)
+    try:
+        return fetch_funnel(store)
+    except Exception as exc:
+        logger.exception("Funnel fetch failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 
 @router.post("/sync")

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 import models
 from cvr import cvr_comparison, fetch_daily_cvr
+from emailer import send_alert_email
 
 CVR_RULE_TITLE = "Conversion Rate Drop 20%"
 DEFAULT_DROP_THRESHOLD = 20.0
@@ -60,21 +61,25 @@ def check_cvr_alarm(db: Session, store: models.Store) -> dict:
     if existing:
         return {**base, "status": "alarm_active", "alert_id": existing.id}
 
+    message = (
+        f"{marker} Conversion rate dropped {comparison['drop_percent']}% in "
+        f"'{store.store_name}': {comparison['previous_cvr']}% "
+        f"({comparison['previous_date']}) -> {comparison['yesterday_cvr']}% "
+        f"({comparison['yesterday_date']})."
+    )
     try:
         alert = models.AlertHistory(
             alarm_rule_id=rule.id,
             store_id=store.id,
-            message=(
-                f"{marker} Conversion rate dropped {comparison['drop_percent']}% in "
-                f"'{store.store_name}': {comparison['previous_cvr']}% "
-                f"({comparison['previous_date']}) -> {comparison['yesterday_cvr']}% "
-                f"({comparison['yesterday_date']})."
-            ),
+            message=message,
             status="pending",
         )
         db.add(alert)
         db.commit()
         db.refresh(alert)
+
+        alert.status = "sent" if send_alert_email("CVR Drop Alarm Triggered", message) else "email_failed"
+        db.commit()
     except Exception:
         db.rollback()
         raise

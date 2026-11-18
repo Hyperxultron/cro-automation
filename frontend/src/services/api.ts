@@ -3,7 +3,7 @@
 const API_URL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 const API_KEY = import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined;
 
-export type OrderStats = { orders: number; revenue: number; quilt_orders: number };
+export type OrderStats = { orders: number; revenue: number; aov: number; quilt_orders: number };
 
 export type QuiltAlarm = {
   status: string;
@@ -13,6 +13,21 @@ export type QuiltAlarm = {
   hours_elapsed?: number;
   threshold_hours?: number;
   alert_id?: number;
+};
+
+export type TopProduct = { name: string; category: string | null; quantity: number; revenue: number };
+
+export type OrdersTrendDay = OrderStats & { date: string };
+
+export type Funnel = {
+  date: string | null;
+  sessions: number;
+  added_to_cart: number;
+  reached_checkout: number;
+  completed_checkout: number;
+  cart_rate: number | null;
+  checkout_rate: number | null;
+  conversion_rate: number | null;
 };
 
 export type CvrComparison = {
@@ -78,6 +93,11 @@ export const api = {
     request<{ store_id: number; days: CvrDay[] }>(`/dashboard/cvr-trend?days=${days}`),
   alerts: (limit = 100) => request<AlertItem[]>(`/dashboard/alerts?limit=${limit}`),
   sync: () => request<Record<string, unknown>>("/dashboard/sync?days=2", { method: "POST" }),
+  topProducts: (days = 1, limit = 5) =>
+    request<{ days: number; products: TopProduct[] }>(`/dashboard/top-products?days=${days}&limit=${limit}`),
+  ordersTrend: (days = 7) =>
+    request<{ days: number; trend: OrdersTrendDay[] }>(`/dashboard/orders-trend?days=${days}`),
+  funnel: () => request<Funnel>("/dashboard/funnel"),
 };
 
 export function formatMoney(value: number, currency?: string | null) {

@@ -1,17 +1,20 @@
 
 import { useCallback, useEffect, useState } from "react";
-import { api, formatMoney, timeAgo, type CvrDay, type DashboardSummary } from "../../services/api";
+import {
+    api, formatMoney, timeAgo,
+    type CvrDay, type DashboardSummary, type Funnel, type OrdersTrendDay, type TopProduct
+} from "../../services/api";
 import AlarmRules from "../alarms/AlarmRules";
 import AlertHistory from "../alarms/AlertHistory";
 import SettingsPage from "../settings/Settings";
 import {
     Activity, ArrowUpRight,
-    Bell, CheckCircle2, Clock3, LayoutDashboard,
-    Mail, Menu, RefreshCw, Settings, ShieldCheck,
+    Bell, CheckCircle2, Clock3, Filter, IndianRupee, LayoutDashboard,
+    Mail, Menu, Package, RefreshCw, Settings, ShieldCheck,
     ShoppingBag, TrendingUp, X
 } from "lucide-react";
 import {
-    Area, AreaChart, CartesianGrid, ResponsiveContainer,
+    Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer,
     Tooltip, XAxis, YAxis
 } from "recharts";
 
@@ -55,6 +58,9 @@ function Dashboard() {
     // ---- Real data from backend ----
     const [summary, setSummary] = useState<DashboardSummary | null>(null);
     const [trend, setTrend] = useState<CvrDay[]>([]);
+    const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+    const [ordersTrend, setOrdersTrend] = useState<OrdersTrendDay[]>([]);
+    const [funnel, setFunnel] = useState<Funnel | null>(null);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -64,12 +70,18 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t] = await Promise.all([
+            const [s, t, tp, ot, f] = await Promise.all([
                 api.summary(),
                 api.cvrTrend(periodDays).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
+                api.topProducts(1, 5).catch(() => ({ days: 1, products: [] as TopProduct[] })),
+                api.ordersTrend(7).catch(() => ({ days: 7, trend: [] as OrdersTrendDay[] })),
+                api.funnel().catch(() => null),
             ]);
             setSummary(s);
             setTrend(t.days);
+            setTopProducts(tp.products);
+            setOrdersTrend(ot.trend);
+            setFunnel(f);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unable to load dashboard data");
         } finally {
@@ -325,8 +337,15 @@ function Dashboard() {
                                 </div>
                             )}
 
-                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                                 {[
+                                    {
+                                        label: "Revenue Today",
+                                        value: loading ? "…" : summary ? formatMoney(summary.today.revenue, currency) : "—",
+                                        change: `${pct(summary?.changes.orders_pct)} vs same time yday`,
+                                        icon: IndianRupee, color: "rose",
+                                        note: summary ? `AOV ${formatMoney(summary.today.aov, currency)} · Yesterday ${formatMoney(summary.yesterday.revenue, currency)}` : "Loading…",
+                                    },
                                     {
                                         label: "Quilt Orders Today",
                                         value: loading ? "…" : String(summary?.today.quilt_orders ?? "—"),
@@ -346,7 +365,7 @@ function Dashboard() {
                                         value: loading ? "…" : String(summary?.today.orders ?? "—"),
                                         change: `${pct(summary?.changes.orders_pct)} vs same time yday`,
                                         icon: Activity, color: "emerald",
-                                        note: summary ? `Revenue ${formatMoney(summary.today.revenue, currency)} · Yesterday ${summary.yesterday.orders} orders / ${formatMoney(summary.yesterday.revenue, currency)}` : "Loading…",
+                                        note: summary ? `Yesterday ${summary.yesterday.orders} orders / ${formatMoney(summary.yesterday.revenue, currency)}` : "Loading…",
                                     },
                                     {
                                         label: "Open Alerts",
@@ -362,6 +381,7 @@ function Dashboard() {
                                         violet: "bg-violet-50 text-violet-600",
                                         emerald: "bg-emerald-50 text-emerald-600",
                                         amber: "bg-amber-50 text-amber-600",
+                                        rose: "bg-rose-50 text-rose-600",
                                     };
                                     return (
                                         <div key={item.label} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
@@ -448,6 +468,87 @@ function Dashboard() {
                                         })}
                                     </div>
                                     <button onClick={() => setActiveNav("Alarm Rules")} className="mt-7 w-full rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Manage Alarm Rules</button>
+                                </section>
+                            </div>
+
+                            <div className="grid gap-6 xl:grid-cols-3">
+                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                    <div className="mb-5 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">Top Selling Products</h3>
+                                            <p className="mt-1 text-xs text-slate-400">Today, by revenue</p>
+                                        </div>
+                                        <Package className="text-blue-500" size={20} />
+                                    </div>
+                                    {topProducts.length === 0 ? (
+                                        <p className="text-xs text-slate-400">{loading ? "Loading…" : "No orders yet today."}</p>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {topProducts.map((p, i) => (
+                                                <div key={p.name} className="flex items-center gap-3">
+                                                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-500">{i + 1}</div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-semibold text-slate-800">{p.name}</p>
+                                                        <p className="text-xs text-slate-400">{p.quantity} sold{p.category ? ` · ${p.category}` : ""}</p>
+                                                    </div>
+                                                    <p className="shrink-0 text-sm font-bold text-slate-900">{formatMoney(p.revenue, currency)}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </section>
+
+                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                    <div className="mb-5 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">Orders - Last 7 Days</h3>
+                                            <p className="mt-1 text-xs text-slate-400">Daily order count (store timezone)</p>
+                                        </div>
+                                        <Activity className="text-emerald-500" size={20} />
+                                    </div>
+                                    <div className="h-48 w-full">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={ordersTrend.map((d) => ({ day: formatDay(d.date, false), orders: d.orders }))}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
+                                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} allowDecimals={false} />
+                                                <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
+                                                <Bar dataKey="orders" fill="#10b981" radius={[6, 6, 0, 0]} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </section>
+
+                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                    <div className="mb-5 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">Conversion Funnel</h3>
+                                            <p className="mt-1 text-xs text-slate-400">{funnel?.date ? `Yesterday (${funnel.date})` : "Yesterday"}</p>
+                                        </div>
+                                        <Filter className="text-violet-500" size={20} />
+                                    </div>
+                                    {!funnel || funnel.sessions === 0 ? (
+                                        <p className="text-xs text-slate-400">{loading ? "Loading…" : "No session data available."}</p>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {[
+                                                { label: "Sessions", value: funnel.sessions, pct: 100 },
+                                                { label: "Added to Cart", value: funnel.added_to_cart, pct: funnel.cart_rate ?? 0 },
+                                                { label: "Reached Checkout", value: funnel.reached_checkout, pct: funnel.checkout_rate ?? 0 },
+                                                { label: "Completed Purchase", value: funnel.completed_checkout, pct: funnel.conversion_rate ?? 0 },
+                                            ].map((stage) => (
+                                                <div key={stage.label}>
+                                                    <div className="mb-1 flex items-center justify-between text-xs">
+                                                        <span className="font-medium text-slate-600">{stage.label}</span>
+                                                        <span className="font-semibold text-slate-900">{stage.value} <span className="text-slate-400">({stage.pct}%)</span></span>
+                                                    </div>
+                                                    <div className="h-2 w-full rounded-full bg-slate-100">
+                                                        <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.max(stage.pct, 2)}%` }} />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </section>
                             </div>
 
