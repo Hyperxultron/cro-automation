@@ -22,6 +22,8 @@ class Store(Base):
     timezone = Column(String(64), nullable=True)
     currency = Column(String(10), nullable=True)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    notification_email = Column(String(255), nullable=True)
+    email_alerts_enabled = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -69,6 +71,7 @@ class AlarmRule(Base):
     description = Column(Text)
     threshold = Column(Float)
     is_active = Column(Boolean, default=True)
+    last_checked_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

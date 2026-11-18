@@ -7,11 +7,17 @@ import {
 import AlarmRules from "../alarms/AlarmRules";
 import AlertHistory from "../alarms/AlertHistory";
 import SettingsPage from "../settings/Settings";
+import StoreIntegration from "../store/StoreIntegration";
+import CroRecommendations from "../recommendations/CroRecommendations";
+import ConversionAnalytics from "../analytics/ConversionAnalytics";
+import ProductAnalytics from "../analytics/ProductAnalytics";
+import CartCheckoutAnalytics from "../analytics/CartCheckoutAnalytics";
+import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowUpRight,
-    Bell, CheckCircle2, Clock3, Filter, IndianRupee, LayoutDashboard,
-    Mail, Menu, Package, RefreshCw, Settings, ShieldCheck,
-    ShoppingBag, TrendingUp, X
+    Bell, CheckCircle2, Clock3, FileText, Filter, Globe, IndianRupee, LayoutDashboard,
+    Lightbulb, Mail, Menu, Package, RefreshCw, Settings, ShieldCheck,
+    ShoppingBag, ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
 import {
     Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer,
@@ -184,11 +190,33 @@ function Dashboard() {
         );
     };
 
-    const navItems = [
-        { name: "Overview", icon: LayoutDashboard },
-        { name: "Alarm Rules", icon: Bell },
-        { name: "Alert History", icon: Activity },
-        { name: "Settings", icon: Settings },
+    const navGroups = [
+        {
+            label: "Main",
+            items: [
+                { name: "Overview", icon: LayoutDashboard },
+                { name: "Conversion Analytics", icon: TrendingUp },
+                { name: "Product Analytics", icon: Package },
+                { name: "Cart & Checkout", icon: ShoppingCart },
+            ],
+        },
+        {
+            label: "Optimization",
+            items: [
+                { name: "Recommendations", icon: Lightbulb },
+                { name: "Alarm Rules", icon: Bell },
+                { name: "Alert History", icon: Activity },
+                { name: "Reports", icon: FileText },
+            ],
+        },
+        {
+            label: "Management",
+            items: [
+                { name: "Store Integration", icon: Globe },
+                { name: "Settings", icon: Settings },
+                { name: "Team", icon: Users },
+            ],
+        },
     ];
 
     return (
@@ -218,10 +246,12 @@ function Dashboard() {
                         </button>
                     </div>
 
-                    <div className="px-5 pt-8">
-                        <p className="mb-4 text-[10px] font-semibold uppercase tracking-[2px] text-slate-500">Workspace</p>
-                        <nav className="space-y-2">
-                            {navItems.map((item) => {
+                    <div className="flex-1 overflow-y-auto px-5 pt-8">
+                        {navGroups.map((group) => (
+                        <div key={group.label} className="mb-6">
+                        <p className="mb-3 text-[10px] font-semibold uppercase tracking-[2px] text-slate-500">{group.label}</p>
+                        <nav className="space-y-1.5">
+                            {group.items.map((item) => {
                                 const Icon = item.icon;
                                 return (
                                     <button
@@ -230,20 +260,25 @@ function Dashboard() {
                                             setActiveNav(item.name);
                                             setMobileMenu(false);
                                         }}
-                                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm transition ${activeNav === item.name ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}
+                                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm transition ${activeNav === item.name ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}
                                     >
-                                        <Icon size={19} />
+                                        <Icon size={18} />
                                         {item.name}
                                         {item.name === "Alarm Rules" && (
                                             <span className="ml-auto rounded-full bg-blue-500/20 px-2 py-0.5 text-xs text-blue-300">02</span>
+                                        )}
+                                        {(item.name === "Reports" || item.name === "Team") && (
+                                            <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-slate-400">Soon</span>
                                         )}
                                     </button>
                                 );
                             })}
                         </nav>
+                        </div>
+                        ))}
                     </div>
 
-                    <div className="mt-auto p-5">
+                    <div className="p-5">
                         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                             <div className="mb-3 flex items-center gap-2 text-blue-300">
                                 <ShieldCheck size={18} />
@@ -301,18 +336,72 @@ function Dashboard() {
                             </div>
                         )}
                         {activeNav === "Alert History" && (
-  <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
-    <AlertHistory />
-  </div>
-)}
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <AlertHistory />
+                            </div>
+                        )}
+                        {activeNav === "Settings" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <SettingsPage />
+                            </div>
+                        )}
+                        {activeNav === "Store Integration" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <StoreIntegration />
+                            </div>
+                        )}
+                        {activeNav === "Recommendations" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <CroRecommendations />
+                            </div>
+                        )}
+                        {activeNav === "Conversion Analytics" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <ConversionAnalytics />
+                            </div>
+                        )}
+                        {activeNav === "Product Analytics" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <ProductAnalytics />
+                            </div>
+                        )}
+                        {activeNav === "Cart & Checkout" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <CartCheckoutAnalytics />
+                            </div>
+                        )}
+                        {activeNav === "Reports" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <ComingSoon
+                                    icon={FileText}
+                                    title="Reports"
+                                    description="Daily, weekly and monthly store performance reports."
+                                    roadmap={[
+                                        "Daily / weekly / monthly performance reports",
+                                        "Product performance & alarm summary reports",
+                                        "PDF / CSV export",
+                                        "Scheduled automated email reports",
+                                    ]}
+                                />
+                            </div>
+                        )}
+                        {activeNav === "Team" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <ComingSoon
+                                    icon={Users}
+                                    title="Team Management"
+                                    description="Invite teammates and control who can see or change what."
+                                    roadmap={[
+                                        "Invite multiple team members",
+                                        "Roles & permissions (admin / member)",
+                                        "Per-store access control",
+                                        "Team-level notifications",
+                                    ]}
+                                />
+                            </div>
+                        )}
 
-{activeNav === "Settings" && (
-  <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
-    <SettingsPage />
-  </div>
-)}
-
-                        <div className={`mx-auto max-w-[1500px] space-y-7 p-5 sm:p-8 ${activeNav === "Alarm Rules" || activeNav === "Alert History" || activeNav === "Settings" ? "hidden" : ""}`}>
+                        <div className={`mx-auto max-w-[1500px] space-y-7 p-5 sm:p-8 ${activeNav === "Overview" ? "" : "hidden"}`}>
 
                             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                                 <div>

@@ -81,3 +81,53 @@ def fetch_funnel(store: models.Store, days: int = 1) -> dict:
     }
     _cache[key] = (time.time() + CACHE_SECONDS, result)
     return result
+
+
+def fetch_funnel_trend(store: models.Store, days: int = 7) -> list[dict]:
+    """
+    Pichhle `days` poore din (aaj ko chhod kar) ka funnel, day-wise - trend chart ke liye.
+    """
+    key = f"trend:{store.store_url}:{days}"
+    cached = _cache.get(key)
+    if cached and cached[0] > time.time():
+        return cached[1]
+
+    q = (
+        "FROM sessions SHOW sessions, sessions_with_cart_additions, "
+        "sessions_that_reached_checkout, sessions_that_completed_checkout "
+        f"TIMESERIES day SINCE -{days + 1}d UNTIL today ORDER BY day ASC"
+    )
+    data = graphql(store.store_url, FUNNEL_QUERY, {"q": q})["shopifyqlQuery"]
+    if data.get("parseErrors"):
+        raise ValueError(f"ShopifyQL error: {data['parseErrors']}")
+
+    tz = ZoneInfo(store.timezone or "UTC")
+    today = datetime.now(tz).date().isoformat()
+
+    rows = (data.get("tableData") or {}).get("rows") or []
+    result = []
+    for row in rows:
+        day = str(row.get("day", ""))[:10]
+        if not day or day >= today:
+            continue
+        sessions = _to_int(row.get("sessions"))
+        cart = _to_int(row.get("sessions_with_cart_additions"))
+        checkout = _to_int(row.get("sessions_that_reached_checkout"))
+        purchased = _to_int(row.get("sessions_that_completed_checkout"))
+        result.append(
+            {
+                "date": day,
+                "sessions": sessions,
+                "added_to_cart": cart,
+                "reached_checkout": checkout,
+                "completed_checkout": purchased,
+                "cart_rate": round(cart / sessions * 100, 1) if sessions else None,
+                "checkout_rate": round(checkout / sessions * 100, 1) if sessions else None,
+                "conversion_rate": round(purchased / sessions * 100, 1) if sessions else None,
+                "cart_abandonment_rate": round((cart - purchased) / cart * 100, 1) if cart else None,
+                "checkout_abandonment_rate": round((checkout - purchased) / checkout * 100, 1) if checkout else None,
+            }
+        )
+    result = result[-days:]
+    _cache[key] = (time.time() + CACHE_SECONDS, result)
+    return result

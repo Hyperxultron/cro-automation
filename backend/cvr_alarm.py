@@ -8,6 +8,8 @@ Rule: Kal ka CVR parso ke CVR se 20% (threshold) ya zyada gira -> alert.
 - Ek store + ek date ke liye sirf ek alert (duplicate nahi)
 """
 
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 import models
@@ -35,6 +37,8 @@ def get_or_create_cvr_rule(db: Session) -> models.AlarmRule:
 
 def check_cvr_alarm(db: Session, store: models.Store) -> dict:
     rule = get_or_create_cvr_rule(db)
+    rule.last_checked_at = datetime.now(timezone.utc)
+    db.commit()
     if not rule.is_active:
         return {"status": "rule_inactive"}
 
@@ -78,7 +82,14 @@ def check_cvr_alarm(db: Session, store: models.Store) -> dict:
         db.commit()
         db.refresh(alert)
 
-        alert.status = "sent" if send_alert_email("CVR Drop Alarm Triggered", message) else "email_failed"
+        email_override = (
+            store.notification_email if store.email_alerts_enabled and store.notification_email else None
+        )
+        if store.email_alerts_enabled is False:
+            alert.status = "email_disabled"
+        else:
+            sent = send_alert_email("CVR Drop Alarm Triggered", message, override_to=email_override)
+            alert.status = "sent" if sent else "email_failed"
         db.commit()
     except Exception:
         db.rollback()

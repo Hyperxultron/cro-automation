@@ -21,9 +21,9 @@ from email.mime.text import MIMEText
 logger = logging.getLogger("emailer")
 
 
-def send_alert_email(subject: str, body: str) -> bool:
+def send_alert_email(subject: str, body: str, override_to: str | None = None) -> bool:
     host = os.getenv("SMTP_HOST")
-    to_raw = os.getenv("ALERT_EMAIL_TO")
+    to_raw = override_to or os.getenv("ALERT_EMAIL_TO")
     if not host or not to_raw:
         logger.info("Email alerts not configured (SMTP_HOST/ALERT_EMAIL_TO missing) - skipping.")
         return False

@@ -48,6 +48,12 @@ STATEMENTS = [
     """,
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_store_shopify_id ON orders (store_id, shopify_order_id);",
     "CREATE INDEX IF NOT EXISTS ix_orders_store_created ON orders (store_id, created_at);",
+    """
+    ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS notification_email VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS email_alerts_enabled BOOLEAN DEFAULT TRUE;
+    """,
+    "ALTER TABLE alarm_rules ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ;",
 ]
 
 

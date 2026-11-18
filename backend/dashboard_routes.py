@@ -17,12 +17,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel
+
 import models
 from cvr import fetch_daily_cvr, cvr_comparison
-from cvr_alarm import check_cvr_alarm
+from cvr_alarm import check_cvr_alarm, CVR_RULE_TITLE
 from dependencies import get_db
-from funnel import fetch_funnel
-from quilt_alarm import check_quilt_alarm
+from funnel import fetch_funnel, fetch_funnel_trend
+from quilt_alarm import check_quilt_alarm, RULE_TITLE as QUILT_RULE_TITLE
+from recommendations import build_recommendations
 from shopify_sync import sync_store
 
 logger = logging.getLogger("dashboard")
@@ -279,3 +282,191 @@ def dashboard_sync(
         alarms["cvr"] = {"status": "error", "detail": str(exc)[:300]}
 
     return {**result, "alarms": alarms}
+
+
+# ---------------------------------------------------------------------------
+# Alarm Rules (real data - pehle frontend mein hardcoded "demo" tha)
+# ---------------------------------------------------------------------------
+
+@router.get("/alarm-rules")
+def list_alarm_rules(shop: str | None = Query(None), db: Session = Depends(get_db)):
+    store = _get_store(db, shop)
+    rules = db.query(models.AlarmRule).order_by(models.AlarmRule.id.asc()).all()
+
+    out = []
+    for rule in rules:
+        last_triggered = (
+            db.query(func.max(models.AlertHistory.triggered_at))
+            .filter(
+                models.AlertHistory.alarm_rule_id == rule.id,
+                models.AlertHistory.store_id == store.id,
+            )
+            .scalar()
+        )
+        live_status = None
+        if rule.is_active:
+            try:
+                if rule.title == QUILT_RULE_TITLE:
+                    live_status = check_quilt_alarm(db, store.id).get("status")
+                elif rule.title == CVR_RULE_TITLE:
+                    live_status = check_cvr_alarm(db, store).get("status")
+            except Exception:
+                logger.exception("Live status check failed for rule %s", rule.id)
+                live_status = "error"
+
+        out.append(
+            {
+                "id": rule.id,
+                "title": rule.title,
+                "description": rule.description,
+                "threshold": rule.threshold,
+                "is_active": rule.is_active,
+                "last_checked_at": rule.last_checked_at.isoformat() if rule.last_checked_at else None,
+                "last_triggered_at": last_triggered.isoformat() if last_triggered else None,
+                "live_status": live_status,
+            }
+        )
+    return out
+
+
+class AlarmRulePatch(BaseModel):
+    is_active: bool | None = None
+    threshold: float | None = None
+
+
+@router.patch("/alarm-rules/{rule_id}")
+def update_alarm_rule(rule_id: int, patch: AlarmRulePatch, db: Session = Depends(get_db)):
+    rule = db.query(models.AlarmRule).filter(models.AlarmRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Alarm rule not found")
+    if patch.is_active is not None:
+        rule.is_active = patch.is_active
+    if patch.threshold is not None:
+        rule.threshold = patch.threshold
+    db.commit()
+    db.refresh(rule)
+    return {"id": rule.id, "is_active": rule.is_active, "threshold": rule.threshold}
+
+
+# ---------------------------------------------------------------------------
+# Settings (real data - pehle frontend mein hardcoded "demo" tha)
+# ---------------------------------------------------------------------------
+
+@router.get("/settings")
+def get_settings(shop: str | None = Query(None), db: Session = Depends(get_db)):
+    store = _get_store(db, shop)
+    return {
+        "store_name": store.store_name,
+        "store_domain": store.store_url,
+        "timezone": store.timezone,
+        "currency": store.currency,
+        "notification_email": store.notification_email,
+        "email_alerts_enabled": store.email_alerts_enabled,
+        "smtp_configured": bool(os.getenv("SMTP_HOST") or os.getenv("ALERT_EMAIL_TO")),
+    }
+
+
+class SettingsPatch(BaseModel):
+    notification_email: str | None = None
+    email_alerts_enabled: bool | None = None
+
+
+@router.patch("/settings")
+def update_settings(
+    patch: SettingsPatch, shop: str | None = Query(None), db: Session = Depends(get_db)
+):
+    store = _get_store(db, shop)
+    if patch.notification_email is not None:
+        store.notification_email = patch.notification_email.strip() or None
+    if patch.email_alerts_enabled is not None:
+        store.email_alerts_enabled = patch.email_alerts_enabled
+    db.commit()
+    db.refresh(store)
+    return {
+        "notification_email": store.notification_email,
+        "email_alerts_enabled": store.email_alerts_enabled,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Store Integration
+# ---------------------------------------------------------------------------
+
+@router.get("/store-info")
+def store_info(shop: str | None = Query(None), db: Session = Depends(get_db)):
+    store = _get_store(db, shop)
+    return {
+        "id": store.id,
+        "name": store.store_name,
+        "domain": store.store_url,
+        "platform": store.platform,
+        "timezone": store.timezone,
+        "currency": store.currency,
+        "connected_at": store.created_at.isoformat() if store.created_at else None,
+        "last_synced_at": store.last_synced_at.isoformat() if store.last_synced_at else None,
+        "auth_method": "Shopify client-credentials grant (app + store same organization)",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Product Analytics (full list, not just top 5)
+# ---------------------------------------------------------------------------
+
+@router.get("/product-performance")
+def product_performance(
+    days: int = Query(30, ge=1, le=90),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    if days == 1:
+        start, end = _local_day_range_utc(store, 0)
+    else:
+        start, _ = _local_day_range_utc(store, days - 1)
+        _, end = _local_day_range_utc(store, 0)
+
+    products = _top_products(db, store, start, end, limit=10_000)
+    if not products:
+        return {"days": days, "products": []}
+
+    revenues = sorted((p["revenue"] for p in products), reverse=True)
+    top_cutoff = revenues[max(0, len(revenues) // 3 - 1)]
+    low_cutoff = revenues[max(0, (2 * len(revenues)) // 3)]
+
+    for p in products:
+        if p["revenue"] >= top_cutoff:
+            p["performance_status"] = "top"
+        elif p["revenue"] <= low_cutoff:
+            p["performance_status"] = "low"
+        else:
+            p["performance_status"] = "average"
+
+    return {"days": days, "products": products}
+
+
+# ---------------------------------------------------------------------------
+# Cart & Checkout Analytics (funnel trend)
+# ---------------------------------------------------------------------------
+
+@router.get("/funnel-trend")
+def funnel_trend(
+    days: int = Query(7, ge=2, le=30),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    try:
+        return {"days": days, "trend": fetch_funnel_trend(store, days=days)}
+    except Exception as exc:
+        logger.exception("Funnel trend failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+# ---------------------------------------------------------------------------
+# CRO Recommendations
+# ---------------------------------------------------------------------------
+
+@router.get("/recommendations")
+def recommendations(shop: str | None = Query(None), db: Session = Depends(get_db)):
+    store = _get_store(db, shop)
+    return {"recommendations": build_recommendations(db, store)}

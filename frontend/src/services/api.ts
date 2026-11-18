@@ -69,6 +69,55 @@ export type AlertItem = {
   resolved_at: string | null;
 };
 
+export type AlarmRuleItem = {
+  id: number;
+  title: string;
+  description: string | null;
+  threshold: number | null;
+  is_active: boolean;
+  last_checked_at: string | null;
+  last_triggered_at: string | null;
+  live_status: string | null;
+};
+
+export type SettingsData = {
+  store_name: string;
+  store_domain: string;
+  timezone: string | null;
+  currency: string | null;
+  notification_email: string | null;
+  email_alerts_enabled: boolean;
+  smtp_configured: boolean;
+};
+
+export type StoreInfo = {
+  id: number;
+  name: string;
+  domain: string;
+  platform: string;
+  timezone: string | null;
+  currency: string | null;
+  connected_at: string | null;
+  last_synced_at: string | null;
+  auth_method: string;
+};
+
+export type ProductPerformance = TopProduct & { performance_status: "top" | "average" | "low" };
+
+export type FunnelTrendDay = Funnel & {
+  cart_abandonment_rate: number | null;
+  checkout_abandonment_rate: number | null;
+};
+
+export type Recommendation = {
+  title: string;
+  explanation: string;
+  evidence: string;
+  priority: "High" | "Medium" | "Low";
+  suggested_action: string;
+  affected_metric: string;
+};
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   if (API_KEY) headers.set("x-api-key", API_KEY);
@@ -98,6 +147,26 @@ export const api = {
   ordersTrend: (days = 7) =>
     request<{ days: number; trend: OrdersTrendDay[] }>(`/dashboard/orders-trend?days=${days}`),
   funnel: () => request<Funnel>("/dashboard/funnel"),
+  funnelTrend: (days = 7) =>
+    request<{ days: number; trend: FunnelTrendDay[] }>(`/dashboard/funnel-trend?days=${days}`),
+  alarmRules: () => request<AlarmRuleItem[]>("/dashboard/alarm-rules"),
+  updateAlarmRule: (id: number, patch: { is_active?: boolean; threshold?: number }) =>
+    request<AlarmRuleItem>(`/dashboard/alarm-rules/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  settings: () => request<SettingsData>("/dashboard/settings"),
+  updateSettings: (patch: { notification_email?: string | null; email_alerts_enabled?: boolean }) =>
+    request<Partial<SettingsData>>("/dashboard/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  storeInfo: () => request<StoreInfo>("/dashboard/store-info"),
+  productPerformance: (days = 30) =>
+    request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
+  recommendations: () => request<{ recommendations: Recommendation[] }>("/dashboard/recommendations"),
 };
 
 export function formatMoney(value: number, currency?: string | null) {

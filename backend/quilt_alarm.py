@@ -43,6 +43,9 @@ def check_quilt_alarm(db: Session, store_id: int) -> dict:
     if not rule:
         return {"status": "no_active_rule"}
 
+    rule.last_checked_at = datetime.now(timezone.utc)
+    db.commit()
+
     threshold_hours = float(rule.threshold or 12)
 
     quilt_product_ids = [
@@ -99,6 +102,14 @@ def check_quilt_alarm(db: Session, store_id: int) -> dict:
 
     from emailer import send_alert_email  # local import, circular-import se bachne ke liye
 
+    store_row = db.query(models.Store).filter(models.Store.id == store_id).first()
+    email_override = (
+        store_row.notification_email
+        if store_row and store_row.email_alerts_enabled and store_row.notification_email
+        else None
+    )
+    email_enabled = not store_row or store_row.email_alerts_enabled
+
     message = (
         f"No qualifying quilt order for store {store_id} in the last "
         f"{elapsed_hours}h (threshold {threshold_hours}h). "
@@ -114,7 +125,11 @@ def check_quilt_alarm(db: Session, store_id: int) -> dict:
     db.commit()
     db.refresh(alert)
 
-    alert.status = "sent" if send_alert_email("Quilt Order Alarm Triggered", message) else "email_failed"
+    if email_enabled:
+        sent = send_alert_email("Quilt Order Alarm Triggered", message, override_to=email_override)
+        alert.status = "sent" if sent else "email_failed"
+    else:
+        alert.status = "email_disabled"
     db.commit()
 
     return {**base, "status": "alarm_triggered", "alert_id": alert.id}
