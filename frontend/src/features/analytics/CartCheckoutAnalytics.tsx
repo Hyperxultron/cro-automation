@@ -1,19 +1,21 @@
 import { useEffect, useState } from "react";
 import { Filter, Info } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api, type Funnel, type FunnelTrendDay } from "../../services/api";
+import { api, type Benchmarks, type Funnel, type FunnelTrendDay } from "../../services/api";
 
 function CartCheckoutAnalytics() {
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [trend, setTrend] = useState<FunnelTrendDay[]>([]);
+  const [benchmarks, setBenchmarks] = useState<Benchmarks | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.funnel(), api.funnelTrend(7)])
-      .then(([f, t]) => {
+    Promise.all([api.funnel(), api.funnelTrend(7), api.benchmarks()])
+      .then(([f, t, b]) => {
         setFunnel(f);
         setTrend(t.trend);
+        setBenchmarks(b);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Unable to load funnel data"))
       .finally(() => setLoading(false));
@@ -56,6 +58,18 @@ function CartCheckoutAnalytics() {
             {loading ? "…" : cartAbandon != null ? `${cartAbandon}%` : "—"}
           </h2>
           <p className="mt-1 text-xs text-slate-400">of sessions that added to cart but never purchased</p>
+          {benchmarks && cartAbandon != null && (
+            <p className="mt-2 text-xs">
+              <span
+                className={
+                  cartAbandon <= benchmarks.cart_abandonment_rate.value ? "text-emerald-600" : "text-amber-600"
+                }
+              >
+                {cartAbandon <= benchmarks.cart_abandonment_rate.value ? "Better than" : "Worse than"} industry avg (
+                {benchmarks.cart_abandonment_rate.value}%)
+              </span>
+            </p>
+          )}
         </div>
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">Checkout Abandonment Rate</p>
@@ -63,8 +77,25 @@ function CartCheckoutAnalytics() {
             {loading ? "…" : checkoutAbandon != null ? `${checkoutAbandon}%` : "—"}
           </h2>
           <p className="mt-1 text-xs text-slate-400">of sessions that reached checkout but never purchased</p>
+          {benchmarks && checkoutAbandon != null && (
+            <p className="mt-2 text-xs">
+              <span
+                className={
+                  checkoutAbandon <= benchmarks.checkout_abandonment_rate.value ? "text-emerald-600" : "text-amber-600"
+                }
+              >
+                {checkoutAbandon <= benchmarks.checkout_abandonment_rate.value ? "Better than" : "Worse than"} industry avg (
+                {benchmarks.checkout_abandonment_rate.value}%)
+              </span>
+            </p>
+          )}
         </div>
       </div>
+      {benchmarks && (
+        <p className="text-xs text-slate-400">
+          Industry averages: {benchmarks.cart_abandonment_rate.source}.
+        </p>
+      )}
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5 flex items-center justify-between">

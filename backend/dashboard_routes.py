@@ -26,6 +26,7 @@ from dependencies import get_db
 from funnel import fetch_funnel, fetch_funnel_trend
 from quilt_alarm import check_quilt_alarm, RULE_TITLE as QUILT_RULE_TITLE
 from recommendations import build_recommendations
+from benchmarks import get_benchmarks
 from shopify_sync import sync_store
 
 logger = logging.getLogger("dashboard")
@@ -470,3 +471,12 @@ def funnel_trend(
 def recommendations(shop: str | None = Query(None), db: Session = Depends(get_db)):
     store = _get_store(db, shop)
     return {"recommendations": build_recommendations(db, store)}
+
+
+# ---------------------------------------------------------------------------
+# Industry benchmarks (static, cited reference points - not live data)
+# ---------------------------------------------------------------------------
+
+@router.get("/benchmarks")
+def benchmarks():
+    return get_benchmarks()

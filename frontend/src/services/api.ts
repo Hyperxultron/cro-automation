@@ -118,6 +118,13 @@ export type Recommendation = {
   affected_metric: string;
 };
 
+export type Benchmark = { value: number; label: string; source: string };
+export type Benchmarks = {
+  cart_abandonment_rate: Benchmark;
+  checkout_abandonment_rate: Benchmark;
+  conversion_rate: Benchmark;
+};
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   if (API_KEY) headers.set("x-api-key", API_KEY);
@@ -167,6 +174,7 @@ export const api = {
   productPerformance: (days = 30) =>
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
   recommendations: () => request<{ recommendations: Recommendation[] }>("/dashboard/recommendations"),
+  benchmarks: () => request<Benchmarks>("/dashboard/benchmarks"),
 };
 
 export function formatMoney(value: number, currency?: string | null) {

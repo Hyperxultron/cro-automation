@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Info, TrendingDown, TrendingUp } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api, type CvrDay, type DashboardSummary } from "../../services/api";
+import { api, type Benchmarks, type CvrDay, type DashboardSummary } from "../../services/api";
 
 type Grouping = "daily" | "weekly" | "monthly";
 
@@ -37,14 +37,16 @@ function ConversionAnalytics() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [days, setDays] = useState<CvrDay[]>([]);
   const [grouping, setGrouping] = useState<Grouping>("daily");
+  const [benchmarks, setBenchmarks] = useState<Benchmarks | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.summary(), api.cvrTrend(30)])
-      .then(([s, t]) => {
+    Promise.all([api.summary(), api.cvrTrend(30), api.benchmarks()])
+      .then(([s, t, b]) => {
         setSummary(s);
         setDays(t.days);
+        setBenchmarks(b);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Unable to load conversion data"))
       .finally(() => setLoading(false));
@@ -75,6 +77,14 @@ function ConversionAnalytics() {
             {loading ? "…" : (cvr?.yesterday_cvr != null ? `${cvr.yesterday_cvr}%` : "—")}
           </h2>
           <p className="mt-1 text-xs text-slate-400">{cvr?.yesterday_date ?? "—"}</p>
+          {benchmarks && cvr?.yesterday_cvr != null && (
+            <p className="mt-2 text-xs">
+              <span className={cvr.yesterday_cvr >= benchmarks.conversion_rate.value ? "text-emerald-600" : "text-amber-600"}>
+                {cvr.yesterday_cvr >= benchmarks.conversion_rate.value ? "Above" : "Below"} industry avg (
+                {benchmarks.conversion_rate.value}%)
+              </span>
+            </p>
+          )}
         </div>
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">Previous Day's CVR</p>
@@ -139,6 +149,7 @@ function ConversionAnalytics() {
         <Info size={15} className="mt-0.5 shrink-0" />
         Sessions-to-order conversion only counts Shopify Online Store sessions. Draft/manual orders and
         app-channel sales aren't reflected in this metric.
+        {benchmarks && ` Industry avg conversion rate benchmark: ${benchmarks.conversion_rate.source}.`}
       </div>
     </div>
   );
