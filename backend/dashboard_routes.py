@@ -27,6 +27,7 @@ from funnel import fetch_funnel, fetch_funnel_trend
 from quilt_alarm import check_quilt_alarm, RULE_TITLE as QUILT_RULE_TITLE
 from recommendations import build_recommendations
 from benchmarks import get_benchmarks
+from order_health import fetch_order_health
 from shopify_sync import sync_store
 
 logger = logging.getLogger("dashboard")
@@ -480,3 +481,17 @@ def recommendations(shop: str | None = Query(None), db: Session = Depends(get_db
 @router.get("/benchmarks")
 def benchmarks():
     return get_benchmarks()
+
+
+# ---------------------------------------------------------------------------
+# Order health (paid / refunded / cancelled breakdown - local data only)
+# ---------------------------------------------------------------------------
+
+@router.get("/order-health")
+def order_health(
+    days: int = Query(30, ge=1, le=90),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    return fetch_order_health(db, store, days=days)

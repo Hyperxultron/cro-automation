@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
     api, formatMoney, timeAgo,
-    type CvrDay, type DashboardSummary, type Funnel, type OrdersTrendDay, type TopProduct
+    type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type OrdersTrendDay, type TopProduct
 } from "../../services/api";
 import AlarmRules from "../alarms/AlarmRules";
 import AlertHistory from "../alarms/AlertHistory";
@@ -67,6 +67,7 @@ function Dashboard() {
     const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
     const [ordersTrend, setOrdersTrend] = useState<OrdersTrendDay[]>([]);
     const [funnel, setFunnel] = useState<Funnel | null>(null);
+    const [orderHealth, setOrderHealth] = useState<OrderHealth | null>(null);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -76,18 +77,20 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t, tp, ot, f] = await Promise.all([
+            const [s, t, tp, ot, f, oh] = await Promise.all([
                 api.summary(),
                 api.cvrTrend(periodDays).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
                 api.topProducts(1, 5).catch(() => ({ days: 1, products: [] as TopProduct[] })),
                 api.ordersTrend(7).catch(() => ({ days: 7, trend: [] as OrdersTrendDay[] })),
                 api.funnel().catch(() => null),
+                api.orderHealth(30).catch(() => null),
             ]);
             setSummary(s);
             setTrend(t.days);
             setTopProducts(tp.products);
             setOrdersTrend(ot.trend);
             setFunnel(f);
+            setOrderHealth(oh);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unable to load dashboard data");
         } finally {
@@ -640,6 +643,40 @@ function Dashboard() {
                                     )}
                                 </section>
                             </div>
+
+                            <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                <div className="mb-5 flex items-center justify-between">
+                                    <div>
+                                        <h3 className="font-bold text-slate-900">Order Health</h3>
+                                        <p className="mt-1 text-xs text-slate-400">Paid / refunded / cancelled breakdown, last {orderHealth?.days ?? 30} days</p>
+                                    </div>
+                                    <ShieldCheck className="text-emerald-500" size={20} />
+                                </div>
+                                {!orderHealth || orderHealth.total_orders === 0 ? (
+                                    <p className="text-xs text-slate-400">{loading ? "Loading…" : "No orders in this window yet."}</p>
+                                ) : (
+                                    <div className="grid gap-4 sm:grid-cols-4">
+                                        {[
+                                            { label: "Paid", data: orderHealth.paid, color: "bg-emerald-500", text: "text-emerald-600" },
+                                            { label: "Refunded", data: orderHealth.refunded, color: "bg-amber-500", text: "text-amber-600" },
+                                            { label: "Cancelled", data: orderHealth.cancelled, color: "bg-red-500", text: "text-red-600" },
+                                            { label: "Pending", data: orderHealth.pending, color: "bg-slate-400", text: "text-slate-500" },
+                                        ].map((s) => (
+                                            <div key={s.label} className="rounded-xl border border-slate-100 p-4">
+                                                <p className="text-xs text-slate-500">{s.label}</p>
+                                                <p className={`mt-1 text-xl font-bold ${s.text}`}>{s.data.pct}%</p>
+                                                <p className="text-xs text-slate-400">{s.data.count} of {orderHealth.total_orders} orders</p>
+                                                <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
+                                                    <div className={`h-full rounded-full ${s.color}`} style={{ width: `${Math.max(s.data.pct, 2)}%` }} />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <p className="mt-4 text-xs text-slate-400">
+                                    A rising refund or cancellation rate is often an early sign of checkout friction, payment issues, or a stock/fulfillment problem.
+                                </p>
+                            </section>
 
                             <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                 <div className="mb-5 flex flex-wrap items-center justify-between gap-3">

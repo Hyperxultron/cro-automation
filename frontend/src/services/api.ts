@@ -125,6 +125,15 @@ export type Benchmarks = {
   conversion_rate: Benchmark;
 };
 
+export type OrderHealth = {
+  days: number;
+  total_orders: number;
+  paid: { count: number; pct: number };
+  refunded: { count: number; pct: number };
+  cancelled: { count: number; pct: number };
+  pending: { count: number; pct: number };
+};
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   if (API_KEY) headers.set("x-api-key", API_KEY);
@@ -175,6 +184,7 @@ export const api = {
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
   recommendations: () => request<{ recommendations: Recommendation[] }>("/dashboard/recommendations"),
   benchmarks: () => request<Benchmarks>("/dashboard/benchmarks"),
+  orderHealth: (days = 30) => request<OrderHealth>(`/dashboard/order-health?days=${days}`),
 };
 
 export function formatMoney(value: number, currency?: string | null) {

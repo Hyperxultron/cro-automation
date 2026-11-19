@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 import models
 from cvr import cvr_comparison, fetch_daily_cvr
 from funnel import fetch_funnel
+from order_health import fetch_order_health
 from quilt_alarm import check_quilt_alarm
 
 
@@ -201,6 +202,41 @@ def build_recommendations(db: Session, store: models.Store) -> list[dict]:
                 "suggested_action": "Check stock levels, pricing, and product page content for this item.",
                 "affected_metric": d["name"],
             })
+    except Exception:
+        pass
+
+    # 6. Order health - refund/cancellation rate
+    try:
+        health = fetch_order_health(db, store, days=30)
+        if health["total_orders"] >= 10:
+            refund_pct = health["refunded"]["pct"]
+            cancel_pct = health["cancelled"]["pct"]
+            if refund_pct >= 10:
+                recs.append({
+                    "title": "Refund rate is higher than usual",
+                    "explanation": (
+                        f"{refund_pct}% of orders in the last 30 days were refunded "
+                        f"({health['refunded']['count']} of {health['total_orders']}). This can point to "
+                        "product quality, sizing/description mismatches, or shipping damage."
+                    ),
+                    "evidence": f"Refunded: {health['refunded']['count']} of {health['total_orders']} orders (last 30 days)",
+                    "priority": "High" if refund_pct >= 20 else "Medium",
+                    "suggested_action": "Check recent refund reasons and product reviews for quality or sizing complaints.",
+                    "affected_metric": "Refund Rate",
+                })
+            if cancel_pct >= 10:
+                recs.append({
+                    "title": "Order cancellation rate is elevated",
+                    "explanation": (
+                        f"{cancel_pct}% of orders in the last 30 days were cancelled "
+                        f"({health['cancelled']['count']} of {health['total_orders']}). Often linked to "
+                        "stock-outs after purchase, payment failures, or long fulfillment delays."
+                    ),
+                    "evidence": f"Cancelled: {health['cancelled']['count']} of {health['total_orders']} orders (last 30 days)",
+                    "priority": "High" if cancel_pct >= 20 else "Medium",
+                    "suggested_action": "Check inventory accuracy and fulfillment speed for recently cancelled orders.",
+                    "affected_metric": "Cancellation Rate",
+                })
     except Exception:
         pass
 
