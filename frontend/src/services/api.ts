@@ -169,6 +169,33 @@ export type SegmentRow = {
   baseline_conversion_rate: number | null;
   sessions_change_pct: number | null;
   conversion_rate_change_pts: number | null;
+  // Channel split only (null for device - Shopify's sales data has no device dimension).
+  revenue: number | null;
+  aov: number | null;
+  revenue_per_session: number | null;
+  baseline_revenue_per_session: number | null;
+  revenue_per_session_change_pct: number | null;
+};
+
+export type FunnelStep = {
+  key: "sessions" | "product_views" | "added_to_cart" | "reached_checkout" | "completed_checkout";
+  label: string;
+  available: boolean;
+  value: number | null;
+  pct_of_sessions: number | null;
+  step_pct: number | null;
+  previous_value: number | null;
+  previous_step_pct: number | null;
+  step_change_pts: number | null;
+};
+
+export type FunnelCompare = {
+  period: "yesterday" | "last7";
+  period_label: string;
+  compare_label: string;
+  product_views_available: boolean;
+  too_early: boolean;
+  steps: FunnelStep[];
 };
 
 export type SegmentSplit = {
@@ -263,6 +290,8 @@ export const api = {
   ordersTrend: (days = 7) =>
     request<{ days: number; trend: OrdersTrendDay[] }>(`/dashboard/orders-trend?days=${days}`),
   funnel: () => request<Funnel>("/dashboard/funnel"),
+  funnelCompare: (period: "yesterday" | "last7" = "yesterday") =>
+    request<FunnelCompare>(`/dashboard/funnel-compare?period=${period}`),
   funnelTrend: (days = 7) =>
     request<{ days: number; trend: FunnelTrendDay[] }>(`/dashboard/funnel-trend?days=${days}`),
   alarmRules: () => request<AlarmRuleItem[]>("/dashboard/alarm-rules"),

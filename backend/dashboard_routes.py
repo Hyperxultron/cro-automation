@@ -23,7 +23,7 @@ import models
 from cvr import fetch_daily_cvr, cvr_comparison
 from cvr_alarm import check_cvr_alarm, CVR_RULE_TITLE
 from dependencies import get_db
-from funnel import fetch_funnel, fetch_funnel_trend
+from funnel import fetch_funnel, fetch_funnel_compare, fetch_funnel_trend
 from quilt_alarm import check_quilt_alarm, RULE_TITLE as QUILT_RULE_TITLE
 from recommendations import build_recommendations
 from benchmarks import get_benchmarks
@@ -261,6 +261,21 @@ def funnel(shop: str | None = Query(None), db: Session = Depends(get_db)):
         return fetch_funnel(store)
     except Exception as exc:
         logger.exception("Funnel fetch failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+@router.get("/funnel-compare")
+def funnel_compare(
+    period: str = Query("yesterday", pattern="^(yesterday|last7)$"),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Sessions -> product view -> cart -> checkout -> purchase, vs a comparison window."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_funnel_compare(store, period=period)
+    except Exception as exc:
+        logger.exception("Funnel compare failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 

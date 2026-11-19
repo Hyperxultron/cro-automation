@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Info, TrendingDown, TrendingUp } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api, type Benchmarks, type CvrDay, type DashboardSummary, type SegmentRow, type SegmentSplit } from "../../services/api";
+import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { api, formatMoney, type Benchmarks, type CvrDay, type DashboardSummary, type FunnelCompare, type SegmentRow, type SegmentSplit } from "../../services/api";
+import FunnelBars from "./FunnelBars";
 
-type SortKey = "sessions" | "added_to_cart_rate" | "conversion_rate" | "orders";
+type SortKey = "sessions" | "added_to_cart_rate" | "conversion_rate" | "aov" | "revenue_per_session" | "orders";
+
+const shiftDate = (iso: string, days: number) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
 
 // "Split by device: mobile, desktop, tablet (sortable table)" / "Split by
 // channel: Meta, Google, organic search, email, direct, referral (sortable
 // table)" (checklist section 3, P1).
-function SegmentTable({ title, data, loading }: { title: string; data: SegmentSplit | null; loading: boolean }) {
+function SegmentTable({ title, data, loading, currency }: { title: string; data: SegmentSplit | null; loading: boolean; currency?: string | null }) {
   const [sortKey, setSortKey] = useState<SortKey>("sessions");
   const [sortDesc, setSortDesc] = useState(true);
 
@@ -35,16 +42,42 @@ function SegmentTable({ title, data, loading }: { title: string; data: SegmentSp
     { key: "sessions", label: "Sessions" },
     { key: "added_to_cart_rate", label: "Add-to-cart rate" },
     { key: "conversion_rate", label: "Conversion rate" },
+    ...(data?.revenue_available
+      ? ([
+          { key: "aov", label: "AOV" },
+          { key: "revenue_per_session", label: "Revenue / session" },
+        ] as { key: SortKey; label: string }[])
+      : []),
     { key: "orders", label: "Orders" },
   ];
 
+  // Change vs the prior period: conversion in points, sessions in %, and
+  // revenue per session in % when available. Tiny segments say "too few"
+  // instead of printing a noisy change.
   const renderChange = (row: SegmentRow) => {
-    if (row.sessions_change_pct === null) return <span className="text-slate-400">—</span>;
-    const up = row.sessions_change_pct >= 0;
+    if (row.sessions < 500) return <span className="text-slate-400">Too few sessions</span>;
+    const parts: { text: string; good: boolean | null }[] = [];
+    if (row.conversion_rate_change_pts !== null) {
+      const v = row.conversion_rate_change_pts;
+      parts.push({ text: `CVR ${v > 0 ? "+" : ""}${v} pts`, good: v === 0 ? null : v > 0 });
+    }
+    if (row.revenue_per_session_change_pct !== null) {
+      const v = row.revenue_per_session_change_pct;
+      parts.push({ text: `RPS ${v > 0 ? "+" : ""}${v}%`, good: v === 0 ? null : v > 0 });
+    }
+    if (row.sessions_change_pct !== null) {
+      const v = row.sessions_change_pct;
+      parts.push({ text: `sessions ${v > 0 ? "+" : ""}${v}%`, good: null });
+    }
+    if (parts.length === 0) return <span className="text-slate-400">—</span>;
     return (
-      <span className={`inline-flex items-center gap-0.5 ${up ? "text-emerald-600" : "text-red-600"}`}>
-        {up ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-        {Math.abs(row.sessions_change_pct)}%
+      <span className="flex flex-col gap-0.5 text-xs">
+        {parts.map((p) => (
+          <span key={p.text} className={`inline-flex items-center gap-0.5 ${p.good === null ? "text-slate-500" : p.good ? "text-emerald-600" : "text-red-600"}`}>
+            {p.good !== null && (p.good ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
+            {p.text}
+          </span>
+        ))}
       </span>
     );
   };
@@ -84,6 +117,16 @@ function SegmentTable({ title, data, loading }: { title: string; data: SegmentSp
                   <td className="py-2.5 pr-4 text-slate-600">{row.sessions.toLocaleString()}</td>
                   <td className="py-2.5 pr-4 text-slate-600">{row.added_to_cart_rate != null ? `${row.added_to_cart_rate}%` : "—"}</td>
                   <td className="py-2.5 pr-4 text-slate-600">{row.conversion_rate != null ? `${row.conversion_rate}%` : "—"}</td>
+                  {data.revenue_available && (
+                    <>
+                      <td className="py-2.5 pr-4 text-slate-600">{row.aov != null ? formatMoney(row.aov, currency) : "—"}</td>
+                      <td className="py-2.5 pr-4 text-slate-600">
+                        {row.revenue_per_session != null
+                          ? new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD", maximumFractionDigits: 2 }).format(row.revenue_per_session)
+                          : "—"}
+                      </td>
+                    </>
+                  )}
                   <td className="py-2.5 pr-4 text-slate-600">{row.orders}</td>
                   <td className="py-2.5 pr-4">{renderChange(row)}</td>
                 </tr>
@@ -92,9 +135,7 @@ function SegmentTable({ title, data, loading }: { title: string; data: SegmentSp
           </table>
         </div>
       )}
-      {data && !data.revenue_available && (
-        <p className="mt-3 text-xs text-slate-400">{data.revenue_note}</p>
-      )}
+      {data?.revenue_note && <p className="mt-3 text-xs text-slate-400">{data.revenue_note}</p>}
     </section>
   );
 }
@@ -137,6 +178,9 @@ function ConversionAnalytics() {
   const [deviceSplit, setDeviceSplit] = useState<SegmentSplit | null>(null);
   const [channelSplit, setChannelSplit] = useState<SegmentSplit | null>(null);
   const [segmentsLoading, setSegmentsLoading] = useState(true);
+  const [funnelPeriod, setFunnelPeriod] = useState<"yesterday" | "last7">("last7");
+  const [funnel, setFunnel] = useState<FunnelCompare | null>(null);
+  const [funnelLoading, setFunnelLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -161,9 +205,35 @@ function ConversionAnalytics() {
       .finally(() => setSegmentsLoading(false));
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .funnelCompare(funnelPeriod)
+      .then((f) => !cancelled && setFunnel(f))
+      .catch(() => !cancelled && setFunnel(null))
+      .finally(() => !cancelled && setFunnelLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [funnelPeriod]);
+
   const chartData = useMemo(() => groupData(days, grouping), [days, grouping]);
   const cvr = summary?.cvr;
-  const dropping = cvr?.drop_percent != null && cvr.drop_percent > 0;
+  // Compare yesterday with the same weekday last week, not the day before
+  // (checklist section 1).
+  const byDate = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
+  const lastWeekDate = cvr?.yesterday_date ? shiftDate(cvr.yesterday_date, -7) : null;
+  const lastWeek = lastWeekDate ? byDate.get(lastWeekDate) : undefined;
+  const yesterdayRow = cvr?.yesterday_date ? byDate.get(cvr.yesterday_date) : undefined;
+  const tooEarly = !yesterdayRow || yesterdayRow.sessions < 500;
+  const changePts =
+    cvr?.yesterday_cvr != null && lastWeek?.cvr != null ? Math.round((cvr.yesterday_cvr - lastWeek.cvr) * 100) / 100 : null;
+  const changePct =
+    changePts !== null && lastWeek?.cvr ? Math.round((changePts / lastWeek.cvr) * 1000) / 10 : null;
+  const dropping = changePts !== null && changePts < 0;
+  const weekdayName = lastWeekDate
+    ? new Date(`${lastWeekDate}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" })
+    : "";
 
   return (
     <div className="space-y-6">
@@ -196,23 +266,27 @@ function ConversionAnalytics() {
           )}
         </div>
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Previous Day's CVR</p>
+          <p className="text-sm text-slate-500">Same weekday last week</p>
           <h2 className="mt-2 text-2xl font-bold text-slate-900">
-            {loading ? "…" : (cvr?.previous_cvr != null ? `${cvr.previous_cvr}%` : "—")}
+            {loading ? "…" : (lastWeek?.cvr != null ? `${lastWeek.cvr}%` : "—")}
           </h2>
-          <p className="mt-1 text-xs text-slate-400">{cvr?.previous_date ?? "—"}</p>
+          <p className="mt-1 text-xs text-slate-400">{lastWeekDate ? `${weekdayName} ${lastWeekDate}` : "—"}</p>
         </div>
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Period-over-period change</p>
-          <h2 className={`mt-2 flex items-center gap-1.5 text-2xl font-bold ${dropping ? "text-red-600" : "text-emerald-600"}`}>
-            {cvr?.drop_percent == null ? "—" : (
+          <p className="text-sm text-slate-500">Change vs same weekday last week</p>
+          <h2 className={`mt-2 flex items-center gap-1.5 text-2xl font-bold ${tooEarly || changePts === null || changePts === 0 ? "text-slate-400" : dropping ? "text-red-600" : "text-emerald-600"}`}>
+            {loading ? "…" : tooEarly ? (
+              <span className="text-base">Too early to compare</span>
+            ) : changePts === null ? "—" : (
               <>
-                {dropping ? <TrendingDown size={20} /> : <TrendingUp size={20} />}
-                {Math.abs(cvr.drop_percent)}%
+                {changePts !== 0 && (dropping ? <TrendingDown size={20} /> : <TrendingUp size={20} />)}
+                {changePts > 0 ? "+" : ""}{changePts} pts{changePct !== null ? ` (${changePct > 0 ? "+" : ""}${changePct}%)` : ""}
               </>
             )}
           </h2>
-          <p className="mt-1 text-xs text-slate-400">{dropping ? "drop vs day before" : "improvement vs day before"}</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {yesterdayRow ? `Base: ~${yesterdayRow.sessions.toLocaleString()} sessions yesterday` : "—"}
+          </p>
         </div>
       </div>
 
@@ -236,27 +310,54 @@ function ConversionAnalytics() {
         ) : (
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="cvrGradient2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              {/* Lines for trends, sessions as bars behind (checklist section 1 / 10). */}
+              <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
                 <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} unit="%" />
-                <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
-                <Area type="monotone" dataKey="cvr" stroke="#3b82f6" strokeWidth={3} fill="url(#cvrGradient2)" />
-              </AreaChart>
+                <YAxis yAxisId="cvr" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} unit="%" />
+                <YAxis yAxisId="sessions" orientation="right" axisLine={false} tickLine={false} tick={{ fill: "#cbd5e1", fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }}
+                  formatter={(value, name) => (name === "sessions" ? [Number(value).toLocaleString(), "Sessions"] : [`${value}%`, "Conversion rate"])}
+                />
+                <Bar yAxisId="sessions" dataKey="sessions" fill="#e2e8f0" radius={[3, 3, 0, 0]} />
+                <Line yAxisId="cvr" type="linear" dataKey="cvr" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 2.5 }} activeDot={{ r: 5 }} />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         )}
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <SegmentTable title="Split by Device" data={deviceSplit} loading={segmentsLoading} />
-        <SegmentTable title="Split by Channel" data={channelSplit} loading={segmentsLoading} />
+      <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-slate-900">Full Funnel</h3>
+            <p className="mt-1 text-xs text-slate-400">{funnel?.period_label ?? "…"} · {funnel?.compare_label ?? ""}</p>
+          </div>
+          <div className="flex rounded-lg border border-slate-200 p-1 text-xs">
+            {([
+              { key: "last7", label: "Last 7 vs prior 7" },
+              { key: "yesterday", label: "Yesterday vs last week" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => {
+                  setFunnelLoading(true);
+                  setFunnelPeriod(opt.key);
+                }}
+                className={`rounded-md px-3 py-1.5 font-medium transition ${funnelPeriod === opt.key ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <FunnelBars data={funnel} loading={funnelLoading} />
+      </section>
+
+      <div className="grid gap-6">
+        <SegmentTable title="Split by Device" data={deviceSplit} loading={segmentsLoading} currency={summary?.store.currency} />
+        <SegmentTable title="Split by Channel" data={channelSplit} loading={segmentsLoading} currency={summary?.store.currency} />
       </div>
 
       <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
     api, formatMoney, timeAgo,
-    type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct
+    type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type FunnelCompare, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct
 } from "../../services/api";
 import ChangeLog from "../changelog/ChangeLog";
 import AlarmRules from "../alarms/AlarmRules";
@@ -13,6 +13,7 @@ import CroRecommendations from "../recommendations/CroRecommendations";
 import ConversionAnalytics from "../analytics/ConversionAnalytics";
 import ProductAnalytics from "../analytics/ProductAnalytics";
 import CartCheckoutAnalytics from "../analytics/CartCheckoutAnalytics";
+import FunnelBars from "../analytics/FunnelBars";
 import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
@@ -57,6 +58,23 @@ const shiftDate = (iso: string, days: number) => {
     return d.toISOString().slice(0, 10);
 };
 
+// Small trend line for a KPI card (checklist section 2: "each with comparison
+// and a small sparkline"). Last 14 complete days; blank days are skipped.
+function Sparkline({ values, color }: { values: (number | null)[]; color: string }) {
+    const data = values.map((v, i) => ({ i, v }));
+    if (data.filter((d) => d.v !== null).length < 2) return null;
+    return (
+        <div className="mt-3 h-8 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                    <YAxis hide domain={["dataMin", "dataMax"]} />
+                    <Line type="linear" dataKey="v" stroke={color} strokeWidth={1.5} dot={false} connectNulls={false} isAnimationActive={false} />
+                </ComposedChart>
+            </ResponsiveContainer>
+        </div>
+    );
+}
+
 // Which live check belongs to which alarm rule (rules now come from the backend,
 // not a hardcoded list - so the Overview can't show a rule that doesn't exist).
 const ruleKind = (rule: AlarmRuleItem): "quilt" | "cvr" | "other" => {
@@ -84,7 +102,7 @@ function Dashboard() {
     const [trend, setTrend] = useState<CvrDay[]>([]);
     const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
     const [ordersTrend, setOrdersTrend] = useState<OrdersTrendDay[]>([]);
-    const [funnel, setFunnel] = useState<Funnel | null>(null);
+    const [funnel, setFunnel] = useState<FunnelCompare | null>(null);
     const [orderHealth, setOrderHealth] = useState<OrderHealth | null>(null);
     const [changeLogEntries, setChangeLogEntries] = useState<ChangeLogEntry[]>([]);
     // "Total sales over time" + "Total sales breakdown" (manager's ask: bring
@@ -106,7 +124,8 @@ function Dashboard() {
                 api.cvrTrend(periodDays * 2).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
                 api.topProducts(1, 5).catch(() => ({ days: 1, products: [] as TopProduct[] })),
                 api.ordersTrend(7).catch(() => ({ days: 7, trend: [] as OrdersTrendDay[] })),
-                api.funnel().catch(() => null),
+                // "Today so far" has no complete funnel yet, so it shows yesterday's.
+                api.funnelCompare(overviewPeriod === "last7" ? "last7" : "yesterday").catch(() => null),
                 api.orderHealth(30).catch(() => null),
                 api.overview(overviewPeriod, overviewCompare).catch(() => null),
                 api.changeLog(Math.max(periodDays, 28)).catch(() => ({ days: 0, valid_areas: [], entries: [] as ChangeLogEntry[] })),
@@ -364,10 +383,10 @@ function Dashboard() {
                                 <ShieldCheck size={18} />
                                 <span className="text-xs font-semibold">Automation Status</span>
                             </div>
-                            <p className="text-2xl font-bold">2 / 2</p>
+                            <p className="text-2xl font-bold">{activeRuleCount} / {alarmRules.length}</p>
                             <p className="mt-1 text-xs text-slate-400">Alarm rules enabled</p>
                             <div className="mt-4 h-1.5 rounded-full bg-white/10">
-                                <div className="h-full w-full rounded-full bg-blue-500" />
+                                <div className="h-full rounded-full bg-blue-500" style={{ width: `${alarmRules.length ? (activeRuleCount / alarmRules.length) * 100 : 0}%` }} />
                             </div>
                         </div>
                         <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-5">
@@ -609,13 +628,22 @@ function Dashboard() {
                                             ? `${m.baseline_label}: not enough order history yet`
                                             : `${m.baseline_label}: ${fmt(m.baseline_value)}`;
 
-                                    const cards = [
+                                    const salesDays = salesTrend?.current ?? [];
+                                    const revenueSpark = salesDays.map((d) => d.revenue);
+                                    const ordersSpark = salesDays.map((d) => d.orders);
+                                    const cvrSpark = trend.slice(-14).map((d) => d.cvr);
+                                    const cards: {
+                                        label: string; period: string; value: string; icon: typeof Bell; color: string;
+                                        change: { text: string; tone: string; showArrow: boolean }; note: string;
+                                        spark?: (number | null)[];
+                                    }[] = [
                                         {
                                             label: "Revenue",
                                             period: periodLabel,
                                             value: loading ? "…" : revenueMetric?.value != null ? formatMoney(revenueMetric.value, currency) : "—",
                                             icon: MoneyIcon, color: "rose",
                                             change: renderChange(revenueMetric, "", true),
+                                            spark: revenueSpark,
                                             note: aovMetric?.value != null
                                                 ? `AOV ${formatMoney(aovMetric.value, currency)} · ${baselineNote(revenueMetric, (v) => formatMoney(v, currency))}`
                                                 : "Loading…",
@@ -636,6 +664,7 @@ function Dashboard() {
                                             value: loading ? "…" : cvrMetric?.value != null ? `${cvrMetric.value}%` : "—",
                                             icon: TrendingUp, color: "violet",
                                             change: renderChange(cvrMetric, " pts"),
+                                            spark: cvrSpark,
                                             note: cvrMetric?.base_label ?? (overview?.cvr_error ? "Shopify analytics unavailable" : "Loading…"),
                                         },
                                         {
@@ -644,6 +673,7 @@ function Dashboard() {
                                             value: loading ? "…" : ordersMetric?.value != null ? String(ordersMetric.value) : "—",
                                             icon: Activity, color: "emerald",
                                             change: renderChange(ordersMetric, ""),
+                                            spark: ordersSpark,
                                             note: baselineNote(ordersMetric, (v) => String(v)),
                                         },
                                         {
@@ -662,6 +692,9 @@ function Dashboard() {
                                         emerald: "bg-emerald-50 text-emerald-600",
                                         amber: "bg-amber-50 text-amber-600",
                                         rose: "bg-rose-50 text-rose-600",
+                                    };
+                                    const sparkColor: Record<string, string> = {
+                                        rose: "#f43f5e", violet: "#8b5cf6", emerald: "#10b981", blue: "#3b82f6",
                                     };
                                     const toneText: Record<string, string> = {
                                         emerald: "text-emerald-600",
@@ -688,6 +721,7 @@ function Dashboard() {
                                                         {item.change.text}
                                                     </span>
                                                 </div>
+                                                {item.spark && <Sparkline values={item.spark} color={sparkColor[item.color] ?? "#94a3b8"} />}
                                                 <p className="mt-2 text-xs text-slate-400">{item.note}</p>
                                             </div>
                                         );
@@ -952,32 +986,11 @@ function Dashboard() {
                                     <div className="mb-5 flex items-center justify-between">
                                         <div>
                                             <h3 className="font-bold text-slate-900">Conversion Funnel</h3>
-                                            <p className="mt-1 text-xs text-slate-400">{funnel?.date ? `Yesterday (${funnel.date})` : "Yesterday"}</p>
+                                            <p className="mt-1 text-xs text-slate-400">{funnel?.period_label ?? "Yesterday"}</p>
                                         </div>
                                         <Filter className="text-violet-500" size={20} />
                                     </div>
-                                    {!funnel || funnel.sessions === 0 ? (
-                                        <p className="text-xs text-slate-400">{loading ? "Loading…" : "No session data available."}</p>
-                                    ) : (
-                                        <div className="space-y-3">
-                                            {[
-                                                { label: "Sessions", value: funnel.sessions, pct: 100 },
-                                                { label: "Added to Cart", value: funnel.added_to_cart, pct: funnel.cart_rate ?? 0 },
-                                                { label: "Reached Checkout", value: funnel.reached_checkout, pct: funnel.checkout_rate ?? 0 },
-                                                { label: "Completed Purchase", value: funnel.completed_checkout, pct: funnel.conversion_rate ?? 0 },
-                                            ].map((stage) => (
-                                                <div key={stage.label}>
-                                                    <div className="mb-1 flex items-center justify-between text-xs">
-                                                        <span className="font-medium text-slate-600">{stage.label}</span>
-                                                        <span className="font-semibold text-slate-900">{stage.value} <span className="text-slate-400">({stage.pct}%)</span></span>
-                                                    </div>
-                                                    <div className="h-2 w-full rounded-full bg-slate-100">
-                                                        <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.max(stage.pct, 2)}%` }} />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                    <FunnelBars data={funnel} loading={loading} compact />
                                 </section>
                             </div>
 
