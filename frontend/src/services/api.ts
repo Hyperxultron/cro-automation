@@ -195,6 +195,33 @@ export type ChangeLogResponse = {
   entries: ChangeLogEntry[];
 };
 
+export type SalesTrendDay = { date: string; revenue: number; orders: number };
+
+export type SalesTrend = {
+  days: number;
+  current: SalesTrendDay[];
+  previous: SalesTrendDay[];
+};
+
+export type SalesBreakdownRow = {
+  label: string;
+  value: number | null;
+  baseline_value: number | null;
+  baseline_label: string;
+  change_abs: number | null;
+  change_pct: number | null;
+  too_early: boolean;
+};
+
+export type SalesBreakdown = {
+  period: "yesterday" | "today" | "last7";
+  period_label: string;
+  compare: "4week_avg" | "last_week";
+  too_early: boolean;
+  rows: SalesBreakdownRow[];
+  note: string;
+};
+
 export type OrderHealth = {
   days: number;
   total_orders: number;
@@ -257,6 +284,9 @@ export const api = {
   orderHealth: (days = 30) => request<OrderHealth>(`/dashboard/order-health?days=${days}`),
   overview: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
     request<Overview>(`/dashboard/overview?period=${period}&compare=${compare}`),
+  salesTrend: (days = 14) => request<SalesTrend>(`/dashboard/sales-trend?days=${days}`),
+  salesBreakdown: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
+    request<SalesBreakdown>(`/dashboard/sales-breakdown?period=${period}&compare=${compare}`),
   segments: (dimension: "device" | "channel", days = 7) =>
     request<SegmentSplit>(`/dashboard/segments?dimension=${dimension}&days=${days}`),
   changeLog: (days = 90) => request<ChangeLogResponse>(`/dashboard/change-log?days=${days}`),

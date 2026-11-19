@@ -29,6 +29,7 @@ from recommendations import build_recommendations
 from benchmarks import get_benchmarks
 from order_health import fetch_order_health
 from overview import fetch_overview
+from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
 from change_log import list_change_log, create_change_log_entry, delete_change_log_entry, VALID_AREAS
 from shopify_sync import sync_store
@@ -516,6 +517,33 @@ def overview(
 ):
     store = _get_store(db, shop)
     return fetch_overview(db, store, period=period, compare=compare)
+
+
+# ---------------------------------------------------------------------------
+# "Total sales over time" + "Total sales breakdown" (manager's ask: bring
+# Shopify's own Analytics-page sales widgets onto our dashboard, from real
+# order data already in our database - no new Shopify scopes needed).
+# ---------------------------------------------------------------------------
+
+@router.get("/sales-trend")
+def sales_trend(
+    days: int = Query(14, ge=2, le=90),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    return fetch_sales_trend(db, store, days=days)
+
+
+@router.get("/sales-breakdown")
+def sales_breakdown(
+    period: str = Query("yesterday", pattern="^(yesterday|today|last7)$"),
+    compare: str = Query("4week_avg", pattern="^(4week_avg|last_week)$"),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    return fetch_sales_breakdown(db, store, period=period, compare=compare)
 
 
 # ---------------------------------------------------------------------------

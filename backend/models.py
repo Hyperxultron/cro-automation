@@ -52,6 +52,13 @@ class Order(Base):
     financial_status = Column(String(50), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     currency = Column(String(10), nullable=True)
+    # "Total sales breakdown" (manager's ask to mirror Shopify's own Analytics
+    # page): subtotal = line items after discount, before shipping/tax.
+    subtotal_amount = Column(Float, default=0)
+    total_discounts = Column(Float, default=0)
+    total_shipping = Column(Float, default=0)
+    total_tax = Column(Float, default=0)
+    total_refunded = Column(Float, default=0)
 
 class OrderItem(Base):
     __tablename__ = "order_items"

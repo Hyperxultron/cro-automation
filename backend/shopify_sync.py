@@ -47,6 +47,11 @@ query Orders($cursor: String, $search: String) {
       test
       displayFinancialStatus
       currentTotalPriceSet { shopMoney { amount currencyCode } }
+      currentSubtotalPriceSet { shopMoney { amount } }
+      currentTotalDiscountsSet { shopMoney { amount } }
+      currentShippingPriceSet { shopMoney { amount } }
+      currentTotalTaxSet { shopMoney { amount } }
+      totalRefundedSet { shopMoney { amount } }
       lineItems(first: 20) {
         nodes {
           quantity
@@ -176,6 +181,11 @@ def sync_orders(db: Session, store: models.Store, days: int = 30) -> dict:
             order.created_at = _parse_dt(node["createdAt"])
             order.cancelled_at = _parse_dt(node.get("cancelledAt"))
             order.financial_status = node.get("displayFinancialStatus")
+            order.subtotal_amount = float(node["currentSubtotalPriceSet"]["shopMoney"]["amount"])
+            order.total_discounts = float(node["currentTotalDiscountsSet"]["shopMoney"]["amount"])
+            order.total_shipping = float(node["currentShippingPriceSet"]["shopMoney"]["amount"])
+            order.total_tax = float(node["currentTotalTaxSet"]["shopMoney"]["amount"])
+            order.total_refunded = float(node["totalRefundedSet"]["shopMoney"]["amount"])
             db.flush()  # order.id chahiye
 
             for item in node["lineItems"]["nodes"]:

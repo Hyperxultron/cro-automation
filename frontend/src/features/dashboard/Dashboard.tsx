@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
     api, formatMoney, timeAgo,
-    type ChangeLogEntry, type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type Overview, type OrdersTrendDay, type TopProduct
+    type ChangeLogEntry, type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct
 } from "../../services/api";
 import ChangeLog from "../changelog/ChangeLog";
 import AlarmRules from "../alarms/AlarmRules";
@@ -86,6 +86,10 @@ function Dashboard() {
     const [funnel, setFunnel] = useState<Funnel | null>(null);
     const [orderHealth, setOrderHealth] = useState<OrderHealth | null>(null);
     const [changeLogEntries, setChangeLogEntries] = useState<ChangeLogEntry[]>([]);
+    // "Total sales over time" + "Total sales breakdown" (manager's ask: bring
+    // Shopify's own Analytics-page sales widgets onto our dashboard).
+    const [salesTrend, setSalesTrend] = useState<SalesTrend | null>(null);
+    const [salesBreakdown, setSalesBreakdown] = useState<SalesBreakdown | null>(null);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -95,7 +99,7 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t, tp, ot, f, oh, ov, cl] = await Promise.all([
+            const [s, t, tp, ot, f, oh, ov, cl, st, sb] = await Promise.all([
                 api.summary(),
                 api.cvrTrend(periodDays).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
                 api.topProducts(1, 5).catch(() => ({ days: 1, products: [] as TopProduct[] })),
@@ -104,6 +108,8 @@ function Dashboard() {
                 api.orderHealth(30).catch(() => null),
                 api.overview(overviewPeriod, overviewCompare).catch(() => null),
                 api.changeLog(periodDays).catch(() => ({ days: 0, valid_areas: [], entries: [] as ChangeLogEntry[] })),
+                api.salesTrend(14).catch(() => null),
+                api.salesBreakdown(overviewPeriod, overviewCompare).catch(() => null),
             ]);
             setSummary(s);
             setTrend(t.days);
@@ -113,6 +119,8 @@ function Dashboard() {
             setOrderHealth(oh);
             setOverview(ov);
             setChangeLogEntries(cl.entries);
+            setSalesTrend(st);
+            setSalesBreakdown(sb);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unable to load dashboard data");
         } finally {
@@ -149,6 +157,19 @@ function Dashboard() {
     const chartMarkers = changeLogEntries
         .map((e) => ({ ...e, label: formatDay(e.date, periodDays > 7) }))
         .filter((e) => chartDayLabels.has(e.label));
+    // "Total sales over time" - current period as a solid line, the same
+    // number of days right before it as a dashed comparison line, aligned
+    // by position (day 1 of this window vs day 1 of the previous window),
+    // the same idea Shopify's own chart uses.
+    const salesChartData = (salesTrend?.current ?? []).map((d, i) => ({
+        day: formatDay(d.date, true),
+        current: d.revenue,
+        previous: salesTrend?.previous[i]?.revenue ?? null,
+    }));
+    const salesTotal = salesChartData.reduce((sum, d) => sum + d.current, 0);
+    const salesTotalPrev = salesChartData.reduce((sum, d) => sum + (d.previous ?? 0), 0);
+    const salesTotalChangePct = salesTotalPrev > 0 ? Math.round(((salesTotal - salesTotalPrev) / salesTotalPrev) * 1000) / 10 : null;
+
     const cvrDiff =
         cvr?.yesterday_cvr != null && cvr?.previous_cvr != null
             ? Math.round((cvr.yesterday_cvr - cvr.previous_cvr) * 100) / 100
@@ -638,6 +659,92 @@ function Dashboard() {
                                         );
                                     });
                                 })()}
+                            </div>
+
+                            <div className="grid gap-6 xl:grid-cols-3">
+                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm xl:col-span-2 sm:p-6">
+                                    <div className="mb-6 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">Total Sales Over Time</h3>
+                                            <p className="mt-1 text-xs text-slate-400">Last {salesTrend?.days ?? 14} days vs the {salesTrend?.days ?? 14} days before that</p>
+                                        </div>
+                                        <DollarSign className="text-blue-500" size={20} />
+                                    </div>
+                                    <div className="mb-4 flex items-end gap-3">
+                                        <span className="text-3xl font-bold text-slate-900">{formatMoney(salesTotal, currency)}</span>
+                                        {salesTotalChangePct !== null && (
+                                            <span className={`mb-1 flex items-center gap-1 text-xs font-semibold ${salesTotalChangePct < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                                                {salesTotalChangePct < 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}
+                                                {salesTotalChangePct > 0 ? "+" : ""}{salesTotalChangePct}% vs previous period
+                                            </span>
+                                        )}
+                                    </div>
+                                    {salesChartData.length === 0 && (
+                                        <p className="mb-2 text-xs text-slate-400">{loading ? "Loading…" : "No sales data available for this period."}</p>
+                                    )}
+                                    <div className="h-64 w-full">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={salesChartData}>
+                                                <defs>
+                                                    <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="0%" stopColor="#10b981" stopOpacity={0.25} />
+                                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
+                                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                                <Tooltip
+                                                    contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }}
+                                                    formatter={(value, name) => [formatMoney(Number(value) || 0, currency), name === "current" ? "This period" : "Previous period"]}
+                                                />
+                                                <Area type="monotone" dataKey="current" stroke="#10b981" strokeWidth={3} fill="url(#salesGradient)" />
+                                                <Area type="monotone" dataKey="previous" stroke="#94a3b8" strokeWidth={2} strokeDasharray="4 3" fill="none" />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </section>
+
+                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                    <div className="mb-5 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">Total Sales Breakdown</h3>
+                                            <p className="mt-1 text-xs text-slate-400">{salesBreakdown?.period_label ?? "Yesterday"}</p>
+                                        </div>
+                                        <FileText className="text-blue-500" size={20} />
+                                    </div>
+                                    {!salesBreakdown ? (
+                                        <p className="text-xs text-slate-400">{loading ? "Loading…" : "No sales data available."}</p>
+                                    ) : (
+                                        <div className="divide-y divide-slate-100">
+                                            {salesBreakdown.rows.map((row) => {
+                                                // Discounts/Returns are costs: a SMALLER number is the good
+                                                // outcome, so their color logic is flipped vs. everything else.
+                                                const lowerIsBetter = row.label === "Discounts" || row.label === "Returns";
+                                                const isGood = row.change_pct === null ? null : lowerIsBetter ? row.change_pct < 0 : row.change_pct > 0;
+                                                return (
+                                                    <div key={row.label} className="flex items-center justify-between py-2.5">
+                                                        <span className={`text-sm ${row.label === "Total sales" ? "font-bold text-slate-900" : "text-slate-600"}`}>{row.label}</span>
+                                                        <div className="text-right">
+                                                            <p className={`text-sm font-semibold ${row.label === "Total sales" ? "text-slate-900" : "text-slate-700"}`}>
+                                                                {row.value === null ? "—" : formatMoney(lowerIsBetter ? -Math.abs(row.value) : row.value, currency)}
+                                                            </p>
+                                                            {!salesBreakdown.too_early && row.change_pct !== null && (
+                                                                <p className={`text-[11px] ${isGood ? "text-emerald-600" : "text-red-500"}`}>
+                                                                    {row.change_pct > 0 ? "+" : ""}{row.change_pct}%
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    {salesBreakdown?.too_early && (
+                                        <p className="mt-3 text-xs text-slate-400">Too early to compare - below the usual order threshold for this period.</p>
+                                    )}
+                                    <p className="mt-3 text-xs text-slate-400">{salesBreakdown?.note}</p>
+                                </section>
                             </div>
 
                             <div className="grid gap-6 xl:grid-cols-3">
