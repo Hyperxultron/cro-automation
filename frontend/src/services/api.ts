@@ -116,6 +116,7 @@ export type ProductRow = {
   price: number | null;
   prior_revenue: number;
   revenue_change_pct: number | null;
+  is_new?: boolean;
   views: number | null;
   cart_adds: number | null;
   add_to_cart_rate?: number | null;
@@ -136,10 +137,12 @@ export type ProductRow = {
 export type CategoryRow = {
   category: string;
   products: number;
+  items: number;
   orders: number;
   revenue: number;
   prior_revenue: number;
   revenue_change_pct: number | null;
+  is_new?: boolean;
 };
 
 export type ProductAnalyticsData = {

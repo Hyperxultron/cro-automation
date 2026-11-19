@@ -17,8 +17,12 @@ const GROUPS: Record<ProductGroup, { label: string; action: string; badge: strin
 type SortKey = "revenue" | "orders" | "views" | "adjusted_rate" | "revenue_left_on_table" | "name";
 
 const pctText = (v: number | null | undefined) => (v == null ? "—" : `${v}%`);
-const changeText = (v: number | null | undefined) =>
-  v == null ? <span className="text-slate-400">—</span> : (
+const changeText = (v: number | null | undefined, isNew?: boolean, prior?: number) =>
+  isNew ? (
+    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700" title={`Sold very little before (${prior != null ? "$" + Math.round(prior).toLocaleString() : "—"}), so a % change isn't meaningful`}>
+      New / low before
+    </span>
+  ) : v == null ? <span className="text-slate-400">—</span> : (
     <span className={v === 0 ? "text-slate-500" : v > 0 ? "text-emerald-600" : "text-red-600"}>
       {v > 0 ? "+" : ""}{v}%
     </span>
@@ -179,7 +183,8 @@ function ProductAnalytics() {
               <thead>
                 <tr className="border-b text-left text-xs text-slate-400">
                   <th className="py-2 pr-4 font-medium">Category</th>
-                  <th className="py-2 pr-4 text-right font-medium">Products sold</th>
+                  <th className="py-2 pr-4 text-right font-medium">Products</th>
+                  <th className="py-2 pr-4 text-right font-medium">Items sold</th>
                   <th className="py-2 pr-4 text-right font-medium">Orders</th>
                   <th className="py-2 pr-4 text-right font-medium">{data?.sales_source === "shopify" ? "Net sales" : "Revenue"}</th>
                   <th className="py-2 text-right font-medium">vs prior 28 days</th>
@@ -190,9 +195,10 @@ function ProductAnalytics() {
                   <tr key={c.category} className="border-b border-slate-50 last:border-0">
                     <td className="py-2.5 pr-4 font-medium text-slate-800">{c.category}</td>
                     <td className="py-2.5 pr-4 text-right text-slate-600">{c.products}</td>
-                    <td className="py-2.5 pr-4 text-right text-slate-600">{c.orders || "—"}</td>
+                    <td className="py-2.5 pr-4 text-right text-slate-600">{c.items.toLocaleString()}</td>
+                    <td className="py-2.5 pr-4 text-right text-slate-600">{c.orders ? c.orders.toLocaleString() : "—"}</td>
                     <td className="py-2.5 pr-4 text-right font-semibold text-slate-900">{formatMoney(c.revenue, currency)}</td>
-                    <td className="py-2.5 text-right">{changeText(c.revenue_change_pct)}</td>
+                    <td className="py-2.5 text-right">{changeText(c.revenue_change_pct, c.is_new, c.prior_revenue)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -275,7 +281,7 @@ function ProductAnalytics() {
                     <td className="py-3 pr-4 text-right text-slate-700">{p.quantity}</td>
                     <td className="py-3 pr-4 text-right text-slate-700">{p.orders || "—"}</td>
                     <td className="py-3 pr-4 text-right font-semibold text-slate-900">{formatMoney(p.revenue, currency)}</td>
-                    <td className="py-3 pr-4 text-right">{changeText(p.revenue_change_pct)}</td>
+                    <td className="py-3 pr-4 text-right">{changeText(p.revenue_change_pct, p.is_new, p.prior_revenue)}</td>
                     {viewsOn && (
                       <td className="py-3 text-right">
                         {p.group && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${GROUPS[p.group].badge}`}>{GROUPS[p.group].label}</span>}

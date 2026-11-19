@@ -32,7 +32,7 @@ export const HELP = {
         "Each product is compared with its own category (quilts with quilts), using an adjusted conversion rate so a product with very few views can't top the list by luck. Stars: many views, high conversion. Hidden gems: few views, high conversion. Leaky: many views, low conversion. Dead weight: few views, low conversion.",
     fixFirst:
         "Leaky products ranked by revenue left on the table = views × (category conversion − product conversion) × price. Fix the top one first.",
-    categories: "Revenue and orders per product category for the last 28 days, vs the 28 days before.",
+    categories: "Per category, last 28 days vs the 28 days before. Products = how many different products sold. Items sold = total pieces. Orders = orders with at least one product from this category (an order with 3 tablecloths counts once). \"New / low before\" = it sold almost nothing in the earlier 28 days, so a % change would be misleading.",
     productTable:
         "Items sold, orders and net sales come from Shopify (same as its \"Total sales by product\" report). Views = real people (bots removed) who opened the product page, from Microsoft Clarity. View → order = orders ÷ views over the same days that have Clarity data.",
 };

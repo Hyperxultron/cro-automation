@@ -244,6 +244,32 @@ def _sales_by_product(db: Session, store: models.Store, start, end) -> list[dict
     ]
 
 
+def _is_new(revenue: float, prior: float) -> bool:
+    """Sold almost nothing in the prior window -> a % change is meaningless ("+4,897%")."""
+    return revenue > 0 and prior < revenue * 0.05
+
+
+def _category_orders(db: Session, store: models.Store, start, end) -> dict[str, int]:
+    """Distinct orders per category (an order with two tablecloths counts once)."""
+    rows = (
+        db.query(models.Order.id, models.Product.product_name, models.Product.category)
+        .join(models.OrderItem, models.OrderItem.order_id == models.Order.id)
+        .join(models.Product, models.Product.id == models.OrderItem.product_id)
+        .filter(
+            models.Order.store_id == store.id,
+            models.Order.cancelled_at.is_(None),
+            models.Order.created_at >= start,
+            models.Order.created_at < end,
+        )
+        .distinct()
+        .all()
+    )
+    seen: dict[str, set] = {}
+    for oid, name, category in rows:
+        seen.setdefault(product_category(name, category), set()).add(oid)
+    return {k: len(v) for k, v in seen.items()}
+
+
 def _window(store: models.Store, days: int, end_days_ago: int = 0):
     tz = _tz(store)
     last_day = datetime.now(tz).date() - timedelta(days=1 + end_days_ago)
@@ -383,18 +409,26 @@ def fetch_product_analytics(db: Session, store: models.Store, days: int = 28) ->
     if views_available:
         classify(products)
 
-    # Category roll-up (checklist P2, cheap to add): revenue, orders, products.
+    # Category roll-up (checklist P2): different products sold, items sold,
+    # orders (each order counted once per category, even with 3 tablecloths
+    # in it), net sales.
+    cat_orders = _category_orders(db, store, start, end)
     categories: dict[str, dict] = {}
     for p in products:
-        c = categories.setdefault(p["category"], {"category": p["category"], "products": 0, "orders": 0, "revenue": 0.0, "prior_revenue": 0.0})
-        c["products"] += 1
-        c["orders"] += p["orders"]
+        c = categories.setdefault(p["category"], {"category": p["category"], "products": 0, "items": 0, "orders": 0, "revenue": 0.0, "prior_revenue": 0.0})
+        if p["quantity"] or p["revenue"]:
+            c["products"] += 1
+        c["items"] += int(p["quantity"] or 0)
         c["revenue"] = round(c["revenue"] + p["revenue"], 2)
         c["prior_revenue"] = round(c["prior_revenue"] + p["prior_revenue"], 2)
     for c in categories.values():
+        c["orders"] = cat_orders.get(c["category"], 0)
         c["revenue_change_pct"] = (
             round((c["revenue"] - c["prior_revenue"]) / c["prior_revenue"] * 100, 1) if c["prior_revenue"] else None
         )
+        c["is_new"] = _is_new(c["revenue"], c["prior_revenue"])
+    for p in products:
+        p["is_new"] = _is_new(p["revenue"], p["prior_revenue"])
 
     fix_first = (
         sorted(
