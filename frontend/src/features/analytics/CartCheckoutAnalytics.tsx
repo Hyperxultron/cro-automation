@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Filter, Info } from "lucide-react";
+import { Filter } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import CartExtras from "./CartExtras";
 import { api, type Benchmarks, type Funnel, type FunnelTrendDay } from "../../services/api";
 
 function CartCheckoutAnalytics() {
@@ -148,11 +149,7 @@ function CartCheckoutAnalytics() {
         )}
       </section>
 
-      <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
-        <Info size={15} className="mt-0.5 shrink-0" />
-        Payment-failure-specific data isn't available through this integration, so it isn't shown here rather than
-        being guessed.
-      </div>
+      <CartExtras />
     </div>
   );
 }

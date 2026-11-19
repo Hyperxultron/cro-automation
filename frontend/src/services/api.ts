@@ -297,6 +297,87 @@ export type LandingPagesData = {
   errors: Record<string, string>;
 };
 
+export type VitalRating = "good" | "needs_improvement" | "poor" | null;
+
+export type Vital = {
+  p75: number | null;
+  rating: VitalRating;
+  good_share: number | null;
+  poor_share: number | null;
+  previous_p75?: number | null;
+  change?: number | null;
+};
+
+export type VitalsRow = { page_loads: number; lcp: Vital; inp: Vital; cls: Vital };
+
+export type SiteHealthData = {
+  days: number;
+  window_label: string;
+  compare_label: string;
+  limits: Record<"lcp" | "inp" | "cls", { good: number; poor: number; unit: string }>;
+  cwv_available: boolean;
+  devices: Record<string, VitalsRow>;
+  page_types: (VitalsRow & { label: string })[];
+  pages: (VitalsRow & { path: string })[];
+  trend: { date: string; page_loads: number; lcp_s: number | null; inp_ms: number | null; cls: number | null }[];
+  search: {
+    sessions_with_searches: number;
+    share_of_sessions: number | null;
+    searcher_conversion_rate: number | null;
+    non_searcher_conversion_rate: number | null;
+    search_added_to_cart_rate: number;
+    search_click_rate: number;
+    searches: number | null;
+    zero_result_searches: number | null;
+    zero_result_share: number | null;
+    top_terms: { term: string; searches: number; click_rate: number | null }[];
+    zero_result_terms: { term: string; searches: number }[];
+  } | null;
+  not_available: string[];
+  errors: Record<string, string>;
+};
+
+export type PaymentRow = {
+  label: string;
+  attempts: number;
+  successful: number;
+  failed_attempts: number;
+  authorization_rate: number | null;
+  share_of_payments: number | null;
+};
+
+export type CartExtras = {
+  days: number;
+  window_label: string;
+  payments: {
+    methods: PaymentRow[];
+    wallets: PaymentRow[];
+    attempts: number;
+    successful: number;
+    failed_attempts: number;
+    authorization_rate: number | null;
+  } | null;
+  payments_error: string | null;
+  order_values: {
+    orders: number;
+    average: number | null;
+    median: number | null;
+    bars: { from: number; label: string; orders: number; share: number; below_threshold_zone: boolean }[];
+    threshold: number | null;
+    near_threshold_orders: number | null;
+    near_threshold_share: number | null;
+    near_threshold_from: number | null;
+    at_or_above_threshold_share: number | null;
+  };
+  items_per_order: {
+    orders: number;
+    average_items: number | null;
+    single_item_share: number | null;
+    bars: { label: string; orders: number; share: number }[];
+  };
+  not_available: string[];
+};
+
 export type SegmentSplit = {
   dimension: "device" | "channel";
   days: number;
@@ -408,6 +489,9 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   storeInfo: () => request<StoreInfo>("/dashboard/store-info"),
+  siteHealth: (days = 28) => request<SiteHealthData>(`/dashboard/site-health?days=${days}`),
+  cartExtras: (days = 28, threshold?: number | null) =>
+    request<CartExtras>(`/dashboard/cart-extras?days=${days}${threshold ? `&threshold=${threshold}` : ""}`),
   landingPages: (days = 28) => request<LandingPagesData>(`/dashboard/landing-pages?days=${days}`),
   productAnalytics: (days = 28) => request<ProductAnalyticsData>(`/dashboard/product-analytics?days=${days}`),
   productPerformance: (days = 30) =>

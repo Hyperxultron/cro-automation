@@ -43,4 +43,14 @@ export const HELP = {
         "Same bounce rate split by where visitors came from. A high bounce from one source (e.g. Social) usually means the ad or post promised something the page doesn't show.",
     bounceByDevice:
         "Bounce rate by device. If mobile is much worse than desktop, check the mobile page (speed, pop-ups, layout).",
+    webVitals:
+        "How fast the store feels to real visitors, measured by Shopify on every page load. We show the p75: 75% of page loads were at least this good (Google's own rule). LCP = how long until the main image or text shows (good: 2.5 s or less). INP = how quickly the page reacts to a tap (good: 200 ms or less). CLS = how much the page jumps around while loading (good: 0.1 or less). Green = good, amber = needs work, red = poor.",
+    siteSearch:
+        "How many visitors use the search box and whether it helps them buy. If searchers convert much better than non-searchers, make search easier to find. Zero-result terms are words people typed that found nothing: add those products, synonyms or redirects.",
+    payments:
+        "Payment success rate = successful payments ÷ purchase attempts (a customer retrying the same purchase counts once). A method with a much lower success rate than the others usually means a gateway or card-decline problem.",
+    orderValues:
+        "How much each order is worth (after discounts, before shipping and tax). If you set your free-shipping threshold, the shaded bars show orders just below it: those customers might add one more item for free shipping.",
+    itemsPerOrder:
+        "How many pieces people buy per order. A high share of 1-item orders means bundles, 'complete the set' or cross-sells could raise order value.",
 };

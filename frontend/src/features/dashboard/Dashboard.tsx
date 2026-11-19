@@ -13,6 +13,7 @@ import CroRecommendations from "../recommendations/CroRecommendations";
 import ConversionAnalytics from "../analytics/ConversionAnalytics";
 import ProductAnalytics from "../analytics/ProductAnalytics";
 import LandingPages from "../analytics/LandingPages";
+import SiteHealth from "../analytics/SiteHealth";
 import CartCheckoutAnalytics from "../analytics/CartCheckoutAnalytics";
 import FunnelBars from "../analytics/FunnelBars";
 import InfoTip from "../../components/InfoTip";
@@ -300,6 +301,7 @@ function Dashboard() {
                 { name: "Product Analytics", icon: Package },
                 { name: "Landing Pages", icon: Route },
                 { name: "Cart & Checkout", icon: ShoppingCart },
+                { name: "Site Health", icon: Gauge },
             ],
         },
         {
@@ -481,6 +483,11 @@ function Dashboard() {
                         {activeNav === "Cart & Checkout" && (
                             <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
                                 <CartCheckoutAnalytics />
+                            </div>
+                        )}
+                        {activeNav === "Site Health" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <SiteHealth />
                             </div>
                         )}
                         {activeNav === "Reports" && (

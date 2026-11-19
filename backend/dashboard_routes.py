@@ -30,6 +30,8 @@ from benchmarks import get_benchmarks
 from order_health import fetch_order_health
 from product_groups import fetch_product_analytics
 from landing import fetch_landing_pages
+from site_health import fetch_site_health
+from cart_extras import fetch_cart_extras
 from overview import fetch_overview
 from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
@@ -491,6 +493,33 @@ def landing_pages(
     except Exception as exc:
         logger.exception("Landing pages failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+@router.get("/site-health")
+def site_health(
+    days: int = Query(28, ge=7, le=90),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Core Web Vitals and site search (checklist section 7)."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_site_health(store, days=days)
+    except Exception as exc:
+        logger.exception("Site health failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+@router.get("/cart-extras")
+def cart_extras(
+    days: int = Query(28, ge=7, le=90),
+    threshold: float | None = Query(None, ge=0),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Payment methods, order value histogram, items per order (checklist section 6)."""
+    store = _get_store(db, shop)
+    return fetch_cart_extras(db, store, days=days, threshold=threshold)
 
 
 @router.get("/clarity-status")
