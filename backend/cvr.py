@@ -15,7 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 import models
-from shopify_client import graphql
+from shopify_client import HUMAN_SESSIONS_FILTER, graphql
 
 SHOPIFYQL_QUERY = """
 query Cvr($q: String!) {
@@ -70,6 +70,7 @@ def fetch_daily_cvr(db: Session, store: models.Store, days: int = 7) -> list[dic
 
     q = (
         f"FROM sessions SHOW sessions, conversion_rate "
+        f"{HUMAN_SESSIONS_FILTER}"
         f"TIMESERIES day SINCE -{days + 1}d UNTIL today ORDER BY day ASC"
     )
     data = graphql(store.store_url, SHOPIFYQL_QUERY, {"q": q})["shopifyqlQuery"]

@@ -5,7 +5,7 @@ export const HELP = {
         "Total sales: what customers paid, incl. shipping and taxes, minus refunds. Same as Shopify's \"Total sales\". Compared with the same weekday in earlier weeks, because Mondays and Saturdays behave differently.",
     quiltOrders: "Orders today that include at least one quilt. Too small a number to compare as a %, so only yesterday's count is shown.",
     conversionRate:
-        "Out of every 100 store visits (sessions), how many placed an order. From Shopify Analytics. \"pts\" = percentage points: 2.0% → 2.5% is +0.5 pts.",
+        "Out of every 100 store visits (sessions), how many placed an order. From Shopify Analytics, human visits only (bots excluded), same as Shopify's own reports. \"pts\" = percentage points: 2.0% → 2.5% is +0.5 pts.",
     orders: "Number of paid or pending orders (cancelled and test orders are left out).",
     openAlerts: "Alerts that fired and aren't resolved yet. Manage the rules on the Alarm Rules page.",
     aov: "Average order value = (gross sales − discounts) ÷ orders, before shipping and tax. Same definition as Shopify.",

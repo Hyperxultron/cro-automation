@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from datetime import datetime
 
 import models
-from shopify_client import graphql
+from shopify_client import HUMAN_SESSIONS_FILTER, graphql
 
 FUNNEL_QUERY = """
 query Funnel($q: String!) {
@@ -44,6 +44,7 @@ def fetch_funnel(store: models.Store, days: int = 1) -> dict:
     q = (
         "FROM sessions SHOW sessions, sessions_with_cart_additions, "
         "sessions_that_reached_checkout, sessions_that_completed_checkout "
+        f"{HUMAN_SESSIONS_FILTER}"
         f"TIMESERIES day SINCE -{days + 1}d UNTIL today ORDER BY day DESC"
     )
     data = graphql(store.store_url, FUNNEL_QUERY, {"q": q})["shopifyqlQuery"]
@@ -95,6 +96,7 @@ def fetch_funnel_trend(store: models.Store, days: int = 7) -> list[dict]:
     q = (
         "FROM sessions SHOW sessions, sessions_with_cart_additions, "
         "sessions_that_reached_checkout, sessions_that_completed_checkout "
+        f"{HUMAN_SESSIONS_FILTER}"
         f"TIMESERIES day SINCE -{days + 1}d UNTIL today ORDER BY day ASC"
     )
     data = graphql(store.store_url, FUNNEL_QUERY, {"q": q})["shopifyqlQuery"]
@@ -169,6 +171,7 @@ def _daily_funnel(store: models.Store) -> tuple[dict[str, dict], bool]:
     q = (
         "FROM sessions SHOW sessions, sessions_with_cart_additions, "
         "sessions_that_reached_checkout, sessions_that_completed_checkout "
+        f"{HUMAN_SESSIONS_FILTER}"
         f"TIMESERIES day SINCE -{DAILY_DAYS + 1}d UNTIL today ORDER BY day ASC"
     )
     data = graphql(store.store_url, FUNNEL_QUERY, {"q": q})["shopifyqlQuery"]
@@ -194,7 +197,9 @@ def _daily_funnel(store: models.Store) -> tuple[dict[str, dict], bool]:
     product_views_available = False
     try:
         pv_q = (
-            "FROM sessions SHOW sessions GROUP BY session_viewed_product "
+            "FROM sessions SHOW sessions "
+            f"{HUMAN_SESSIONS_FILTER}"
+            "GROUP BY session_viewed_product "
             f"TIMESERIES day SINCE -{DAILY_DAYS + 1}d UNTIL today ORDER BY day ASC"
         )
         pv = graphql(store.store_url, FUNNEL_QUERY, {"q": pv_q})["shopifyqlQuery"]

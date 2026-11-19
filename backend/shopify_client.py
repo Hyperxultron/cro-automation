@@ -96,3 +96,9 @@ def graphql(shop: str, query: str, variables: dict | None = None, max_retries: i
         return body["data"]
 
     raise ShopifyError("GraphQL request failed after retries")
+
+
+# Shopify Analytics' own reports count human sessions only ("Human or bot
+# session is Human"). Every ShopifyQL `sessions` query in this app uses the
+# same filter so sessions / conversion rate / funnel match Shopify exactly.
+HUMAN_SESSIONS_FILTER = "WHERE human_or_bot_session = 'Human' "

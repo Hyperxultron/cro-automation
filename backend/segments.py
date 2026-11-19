@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import models
-from shopify_client import graphql
+from shopify_client import HUMAN_SESSIONS_FILTER, graphql
 
 SEGMENT_QUERY = """
 query Segment($q: String!) {
@@ -70,6 +70,7 @@ def _run_segment_query(store: models.Store, dimension_field: str, days_ago_start
     until = f"-{days_ago_end}d" if days_ago_end else "today"
     q = (
         f"FROM sessions SHOW sessions, added_to_cart_rate, conversion_rate, num_orders "
+        f"{HUMAN_SESSIONS_FILTER}"
         f"GROUP BY {dimension_field} WITH TOTALS SINCE {since} UNTIL {until} "
         f"ORDER BY sessions DESC"
     )
