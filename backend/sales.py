@@ -199,11 +199,11 @@ def fetch_sales_breakdown(db: Session, store: models.Store, period: str = "yeste
         "rows": [
             row("gross", "Gross sales"),
             row("discounts", "Discounts"),
-            row("returns", "Returns"),
+            row("returns", "Sales reversals (refunds)"),
             row("net", "Net sales"),
-            row("shipping", "Shipping"),
+            row("shipping", "Shipping charges"),
             row("tax", "Taxes"),
             row("total", "Total sales"),
         ],
-        "note": "Returns is Shopify's total refunded amount for the order, which can include refunded shipping or tax, not only product refunds.",
+        "note": "Same rows as Shopify Analytics. Sales reversals = money refunded on orders (can include refunded shipping or tax). Return fees aren't synced yet.",
     }

@@ -52,9 +52,15 @@ def _order_stats(db: Session, store: models.Store, start, end) -> dict:
         models.Order.created_at < end,
     )
     orders = base.count()
-    revenue = base.with_entities(func.coalesce(func.sum(models.Order.total_amount), 0)).scalar()
+    revenue, subtotal = base.with_entities(
+        func.coalesce(func.sum(models.Order.total_amount), 0),
+        func.coalesce(func.sum(models.Order.subtotal_amount), 0),
+    ).first()
     revenue = round(float(revenue or 0), 2)
-    aov = round(revenue / orders, 2) if orders else 0.0
+    # AOV uses Shopify's own definition so it matches Shopify Analytics:
+    # (gross sales - discounts) / orders, i.e. before shipping and taxes.
+    # Our subtotal_amount is Shopify's subtotal, which is already after discounts.
+    aov = round(float(subtotal or 0) / orders, 2) if orders else 0.0
     return {"orders": orders, "revenue": revenue, "aov": aov}
 
 

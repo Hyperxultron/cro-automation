@@ -14,6 +14,8 @@ import ConversionAnalytics from "../analytics/ConversionAnalytics";
 import ProductAnalytics from "../analytics/ProductAnalytics";
 import CartCheckoutAnalytics from "../analytics/CartCheckoutAnalytics";
 import FunnelBars from "../analytics/FunnelBars";
+import InfoTip from "../../components/InfoTip";
+import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
@@ -525,6 +527,20 @@ function Dashboard() {
                                 </button>
                             </div>
 
+                            {/* "How to read this page" - so a new team member can follow the
+                                dashboard without help (manager's 15-minute goal). */}
+                            <details className="group rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-600">
+                                <summary className="cursor-pointer select-none font-semibold text-blue-800">How to read this page (1 minute)</summary>
+                                <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed">
+                                    <li><b>Pick a period</b> at the top. "Yesterday" is a full day and is the default; "Today so far" is still filling up.</li>
+                                    <li><b>Check the health strip</b>: if the last order was many hours ago during US daytime, something may be broken.</li>
+                                    <li><b>Read the cards left to right</b>: Revenue → Conversion rate → Orders. Each card says its period and what it's compared with (the same weekday in earlier weeks).</li>
+                                    <li><b>Colours mean good or bad, not up or down.</b> Green = good for the store, red = needs attention. Grey "Too early to compare" = not enough data yet to trust a % change.</li>
+                                    <li><b>Find where it changed</b> in the Conversion Funnel: the step with the red number is where shoppers dropped off more than usual. Then open Conversion Analytics for the device and channel split.</li>
+                                    <li>Tap any <span className="inline-flex align-middle text-slate-400">ⓘ</span> to see exactly what a number means. Numbers come from Shopify and match Shopify Analytics' definitions.</li>
+                                </ol>
+                            </details>
+
                             {/* Period controls + comparison picker (checklist section 2, P1).
                                 Yesterday (a complete day) is the default; Today is an explicit toggle. */}
                             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
@@ -635,10 +651,10 @@ function Dashboard() {
                                     const cards: {
                                         label: string; period: string; value: string; icon: typeof Bell; color: string;
                                         change: { text: string; tone: string; showArrow: boolean }; note: string;
-                                        spark?: (number | null)[];
+                                        spark?: (number | null)[]; help: string;
                                     }[] = [
                                         {
-                                            label: "Revenue",
+                                            label: "Revenue", help: HELP.revenue,
                                             period: periodLabel,
                                             value: loading ? "…" : revenueMetric?.value != null ? formatMoney(revenueMetric.value, currency) : "—",
                                             icon: MoneyIcon, color: "rose",
@@ -649,7 +665,7 @@ function Dashboard() {
                                                 : "Loading…",
                                         },
                                         {
-                                            label: "Quilt Orders Today",
+                                            label: "Quilt Orders Today", help: HELP.quiltOrders,
                                             period: "Today",
                                             value: loading ? "…" : String(summary?.today.quilt_orders ?? "—"),
                                             // Quilt volume (a handful a day) is always below the ~20-order
@@ -659,7 +675,7 @@ function Dashboard() {
                                             note: summary ? `Yesterday: ${summary.yesterday.quilt_orders} quilt orders (store time)` : "Loading…",
                                         },
                                         {
-                                            label: "Conversion Rate",
+                                            label: "Conversion Rate", help: HELP.conversionRate,
                                             period: periodLabel,
                                             value: loading ? "…" : cvrMetric?.value != null ? `${cvrMetric.value}%` : "—",
                                             icon: TrendingUp, color: "violet",
@@ -668,7 +684,7 @@ function Dashboard() {
                                             note: cvrMetric?.base_label ?? (overview?.cvr_error ? "Shopify analytics unavailable" : "Loading…"),
                                         },
                                         {
-                                            label: "Orders",
+                                            label: "Orders", help: HELP.orders,
                                             period: periodLabel,
                                             value: loading ? "…" : ordersMetric?.value != null ? String(ordersMetric.value) : "—",
                                             icon: Activity, color: "emerald",
@@ -677,7 +693,7 @@ function Dashboard() {
                                             note: baselineNote(ordersMetric, (v) => String(v)),
                                         },
                                         {
-                                            label: "Open Alerts",
+                                            label: "Open Alerts", help: HELP.openAlerts,
                                             period: "Now",
                                             value: loading ? "…" : String(summary?.open_alerts ?? 0),
                                             change: { text: "", tone: "slate", showArrow: false },
@@ -709,7 +725,7 @@ function Dashboard() {
                                             <div key={item.label} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
                                                 <div className="flex items-center justify-between">
                                                     <div>
-                                                        <p className="text-sm font-medium text-slate-500">{item.label}</p>
+                                                        <p className="text-sm font-medium text-slate-500">{item.label}<InfoTip text={item.help} /></p>
                                                         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.period}</p>
                                                     </div>
                                                     <div className={`rounded-xl p-2.5 ${colors[item.color]}`}><Icon size={20} /></div>
@@ -733,7 +749,7 @@ function Dashboard() {
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm xl:col-span-2 sm:p-6">
                                     <div className="mb-6 flex items-center justify-between">
                                         <div>
-                                            <h3 className="font-bold text-slate-900">Total Sales Over Time</h3>
+                                            <h3 className="font-bold text-slate-900">Total Sales Over Time<InfoTip text={HELP.salesOverTime} /></h3>
                                             <p className="mt-1 text-xs text-slate-400">Last {salesTrend?.days ?? 14} days vs the {salesTrend?.days ?? 14} days before that</p>
                                         </div>
                                         <DollarSign className="text-blue-500" size={20} />
@@ -778,7 +794,7 @@ function Dashboard() {
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                     <div className="mb-5 flex items-center justify-between">
                                         <div>
-                                            <h3 className="font-bold text-slate-900">Total Sales Breakdown</h3>
+                                            <h3 className="font-bold text-slate-900">Total Sales Breakdown<InfoTip text={HELP.salesBreakdown} /></h3>
                                             <p className="mt-1 text-xs text-slate-400">{salesBreakdown?.period_label ?? "Yesterday"}</p>
                                         </div>
                                         <FileText className="text-blue-500" size={20} />
@@ -790,7 +806,7 @@ function Dashboard() {
                                             {salesBreakdown.rows.map((row) => {
                                                 // Discounts/Returns are costs: a SMALLER number is the good
                                                 // outcome, so their color logic is flipped vs. everything else.
-                                                const lowerIsBetter = row.label === "Discounts" || row.label === "Returns";
+                                                const lowerIsBetter = row.label === "Discounts" || row.label.startsWith("Sales reversals");
                                                 const isGood = row.change_pct === null ? null : lowerIsBetter ? row.change_pct < 0 : row.change_pct > 0;
                                                 return (
                                                     <div key={row.label} className="flex items-center justify-between py-2.5">
@@ -827,7 +843,7 @@ function Dashboard() {
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm xl:col-span-2 sm:p-6">
                                     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                                         <div>
-                                            <h3 className="font-bold text-slate-900">Conversion Rate Trend</h3>
+                                            <h3 className="font-bold text-slate-900">Conversion Rate Trend<InfoTip text={HELP.cvrTrend} /></h3>
                                             <p className="mt-1 text-xs text-slate-400">Daily conversion rate from Shopify Analytics (store timezone) · bars: sessions</p>
                                         </div>
                                         <select value={period} onChange={(e) => setPeriod(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none">
@@ -900,7 +916,7 @@ function Dashboard() {
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <h3 className="font-bold text-slate-900">Alarm Overview</h3>
+                                            <h3 className="font-bold text-slate-900">Alarm Overview<InfoTip text={HELP.alarms} /></h3>
                                             <p className="mt-1 text-xs text-slate-400">Your automation rules</p>
                                         </div>
                                         <Bell className="text-blue-500" size={21} />
@@ -938,7 +954,7 @@ function Dashboard() {
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                     <div className="mb-5 flex items-center justify-between">
                                         <div>
-                                            <h3 className="font-bold text-slate-900">Top Selling Products</h3>
+                                            <h3 className="font-bold text-slate-900">Top Selling Products<InfoTip text={HELP.topProducts} /></h3>
                                             <p className="mt-1 text-xs text-slate-400">Today, by revenue</p>
                                         </div>
                                         <Package className="text-blue-500" size={20} />
@@ -964,7 +980,7 @@ function Dashboard() {
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                     <div className="mb-5 flex items-center justify-between">
                                         <div>
-                                            <h3 className="font-bold text-slate-900">Orders - Last 7 Days</h3>
+                                            <h3 className="font-bold text-slate-900">Orders - Last 7 Days<InfoTip text={HELP.ordersTrend} /></h3>
                                             <p className="mt-1 text-xs text-slate-400">Daily order count (store timezone)</p>
                                         </div>
                                         <Activity className="text-emerald-500" size={20} />
@@ -985,7 +1001,7 @@ function Dashboard() {
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                     <div className="mb-5 flex items-center justify-between">
                                         <div>
-                                            <h3 className="font-bold text-slate-900">Conversion Funnel</h3>
+                                            <h3 className="font-bold text-slate-900">Conversion Funnel<InfoTip text={HELP.funnel} /></h3>
                                             <p className="mt-1 text-xs text-slate-400">{funnel?.period_label ?? "Yesterday"}</p>
                                         </div>
                                         <Filter className="text-violet-500" size={20} />
@@ -997,7 +1013,7 @@ function Dashboard() {
                             <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                 <div className="mb-5 flex items-center justify-between">
                                     <div>
-                                        <h3 className="font-bold text-slate-900">Order Health</h3>
+                                        <h3 className="font-bold text-slate-900">Order Health<InfoTip text={HELP.orderHealth} /></h3>
                                         <p className="mt-1 text-xs text-slate-400">Paid / refunded / cancelled breakdown, last {orderHealth?.days ?? 30} days</p>
                                     </div>
                                     <ShieldCheck className="text-emerald-500" size={20} />

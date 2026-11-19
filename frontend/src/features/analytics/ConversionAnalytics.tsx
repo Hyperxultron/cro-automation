@@ -3,6 +3,8 @@ import { ArrowDown, ArrowUp, Info, TrendingDown, TrendingUp } from "lucide-react
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, formatMoney, type Benchmarks, type CvrDay, type DashboardSummary, type FunnelCompare, type SegmentRow, type SegmentSplit } from "../../services/api";
 import FunnelBars from "./FunnelBars";
+import InfoTip from "../../components/InfoTip";
+import { HELP } from "../../components/helpText";
 
 type SortKey = "sessions" | "added_to_cart_rate" | "conversion_rate" | "aov" | "revenue_per_session" | "orders";
 
@@ -85,7 +87,7 @@ function SegmentTable({ title, data, loading, currency }: { title: string; data:
   return (
     <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-bold text-slate-900">{title}</h3>
+        <h3 className="font-bold text-slate-900">{title}<InfoTip text={title.includes("Device") ? HELP.deviceSplit : HELP.channelSplit} /></h3>
         <p className="text-xs text-slate-400">Last {data?.days ?? 7} days vs prior {data?.days ?? 7} days</p>
       </div>
       {loading ? (
@@ -251,7 +253,7 @@ function ConversionAnalytics() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Yesterday's CVR</p>
+          <p className="text-sm text-slate-500">Yesterday's conversion rate<InfoTip text={HELP.conversionRate} /></p>
           <h2 className="mt-2 text-2xl font-bold text-slate-900">
             {loading ? "…" : (cvr?.yesterday_cvr != null ? `${cvr.yesterday_cvr}%` : "—")}
           </h2>
@@ -273,7 +275,7 @@ function ConversionAnalytics() {
           <p className="mt-1 text-xs text-slate-400">{lastWeekDate ? `${weekdayName} ${lastWeekDate}` : "—"}</p>
         </div>
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Change vs same weekday last week</p>
+          <p className="text-sm text-slate-500">Change vs same weekday last week<InfoTip text={HELP.tooEarly} /></p>
           <h2 className={`mt-2 flex items-center gap-1.5 text-2xl font-bold ${tooEarly || changePts === null || changePts === 0 ? "text-slate-400" : dropping ? "text-red-600" : "text-emerald-600"}`}>
             {loading ? "…" : tooEarly ? (
               <span className="text-base">Too early to compare</span>
@@ -292,7 +294,7 @@ function ConversionAnalytics() {
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="font-bold text-slate-900">Conversion Rate Trend</h3>
+          <h3 className="font-bold text-slate-900">Conversion Rate Trend<InfoTip text={HELP.cvrTrend} /></h3>
           <div className="flex rounded-lg border border-slate-200 p-1 text-xs">
             {(["daily", "weekly", "monthly"] as Grouping[]).map((g) => (
               <button
@@ -331,7 +333,7 @@ function ConversionAnalytics() {
       <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="font-bold text-slate-900">Full Funnel</h3>
+            <h3 className="font-bold text-slate-900">Full Funnel<InfoTip text={HELP.funnel} /></h3>
             <p className="mt-1 text-xs text-slate-400">{funnel?.period_label ?? "…"} · {funnel?.compare_label ?? ""}</p>
           </div>
           <div className="flex rounded-lg border border-slate-200 p-1 text-xs">
