@@ -10,7 +10,7 @@ Endpoints:
 
 import logging
 import os
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -30,6 +30,7 @@ from benchmarks import get_benchmarks
 from order_health import fetch_order_health
 from overview import fetch_overview
 from segments import fetch_segment_split
+from change_log import list_change_log, create_change_log_entry, delete_change_log_entry, VALID_AREAS
 from shopify_sync import sync_store
 
 logger = logging.getLogger("dashboard")
@@ -535,3 +536,51 @@ def segments(
     except Exception as exc:
         logger.exception("Segment split failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+# ---------------------------------------------------------------------------
+# Change log (manager checklist, section 8 P1). Manual log - team records
+# what they changed (theme/app/price/promo/ad); markers on trend charts use
+# this same list client-side.
+# ---------------------------------------------------------------------------
+
+class ChangeLogCreate(BaseModel):
+    date: date
+    change: str
+    area: str = "other"
+    owner: str | None = None
+
+
+@router.get("/change-log")
+def change_log(
+    days: int = Query(90, ge=1, le=365),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    return {"days": days, "valid_areas": sorted(VALID_AREAS), "entries": list_change_log(db, store, days=days)}
+
+
+@router.post("/change-log")
+def create_change_log(
+    body: ChangeLogCreate,
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    if not body.change.strip():
+        raise HTTPException(status_code=400, detail="change cannot be empty")
+    store = _get_store(db, shop)
+    return create_change_log_entry(db, store, body.date, body.change, body.area, body.owner)
+
+
+@router.delete("/change-log/{entry_id}")
+def remove_change_log(
+    entry_id: int,
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    ok = delete_change_log_entry(db, store, entry_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Change log entry not found")
+    return {"deleted": entry_id}

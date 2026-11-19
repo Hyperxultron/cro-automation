@@ -1,5 +1,5 @@
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, ForeignKey, Text
 from sqlalchemy.sql import func
 
 
@@ -72,6 +72,24 @@ class AlarmRule(Base):
     threshold = Column(Float)
     is_active = Column(Boolean, default=True)
     last_checked_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChangeLogEntry(Base):
+    """
+    Manager checklist section 8, P1: "Change log: date, change, area (theme,
+    app, price, promo, ad), owner" + markers on trend charts. This is a manual
+    log (the team records what they changed) - there's no automatic Shopify
+    "theme/price/promo changed" feed we can sync, so entries are typed in.
+    """
+    __tablename__ = "change_log_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    entry_date = Column(Date, nullable=False, index=True)
+    change = Column(Text, nullable=False)
+    area = Column(String(50), nullable=False, default="other")  # theme, app, price, promo, ad, other
+    owner = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

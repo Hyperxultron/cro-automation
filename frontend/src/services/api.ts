@@ -178,6 +178,23 @@ export type SegmentSplit = {
   revenue_note: string;
 };
 
+export type ChangeLogArea = "theme" | "app" | "price" | "promo" | "ad" | "other";
+
+export type ChangeLogEntry = {
+  id: number;
+  date: string;
+  change: string;
+  area: ChangeLogArea;
+  owner: string | null;
+  created_at: string | null;
+};
+
+export type ChangeLogResponse = {
+  days: number;
+  valid_areas: ChangeLogArea[];
+  entries: ChangeLogEntry[];
+};
+
 export type OrderHealth = {
   days: number;
   total_orders: number;
@@ -242,6 +259,15 @@ export const api = {
     request<Overview>(`/dashboard/overview?period=${period}&compare=${compare}`),
   segments: (dimension: "device" | "channel", days = 7) =>
     request<SegmentSplit>(`/dashboard/segments?dimension=${dimension}&days=${days}`),
+  changeLog: (days = 90) => request<ChangeLogResponse>(`/dashboard/change-log?days=${days}`),
+  addChangeLogEntry: (entry: { date: string; change: string; area: ChangeLogArea; owner?: string }) =>
+    request<ChangeLogEntry>("/dashboard/change-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entry),
+    }),
+  deleteChangeLogEntry: (id: number) =>
+    request<{ deleted: number }>(`/dashboard/change-log/${id}`, { method: "DELETE" }),
 };
 
 export function formatMoney(value: number, currency?: string | null) {

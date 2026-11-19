@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
     api, formatMoney, timeAgo,
-    type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type Overview, type OrdersTrendDay, type TopProduct
+    type ChangeLogEntry, type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type Overview, type OrdersTrendDay, type TopProduct
 } from "../../services/api";
+import ChangeLog from "../changelog/ChangeLog";
 import AlarmRules from "../alarms/AlarmRules";
 import AlertHistory from "../alarms/AlertHistory";
 import SettingsPage from "../settings/Settings";
@@ -15,12 +16,12 @@ import CartCheckoutAnalytics from "../analytics/CartCheckoutAnalytics";
 import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
-    Bell, CheckCircle2, Clock3, DollarSign, FileText, Filter, Gauge, Globe, IndianRupee, LayoutDashboard,
+    Bell, CheckCircle2, Clock3, DollarSign, FileText, Filter, Gauge, Globe, History, IndianRupee, LayoutDashboard,
     Lightbulb, Mail, Menu, Package, RefreshCw, Settings, ShieldCheck,
     ShoppingBag, ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
 import {
-    Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer,
+    Area, AreaChart, Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer,
     Tooltip, XAxis, YAxis
 } from "recharts";
 
@@ -84,6 +85,7 @@ function Dashboard() {
     const [ordersTrend, setOrdersTrend] = useState<OrdersTrendDay[]>([]);
     const [funnel, setFunnel] = useState<Funnel | null>(null);
     const [orderHealth, setOrderHealth] = useState<OrderHealth | null>(null);
+    const [changeLogEntries, setChangeLogEntries] = useState<ChangeLogEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -93,7 +95,7 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t, tp, ot, f, oh, ov] = await Promise.all([
+            const [s, t, tp, ot, f, oh, ov, cl] = await Promise.all([
                 api.summary(),
                 api.cvrTrend(periodDays).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
                 api.topProducts(1, 5).catch(() => ({ days: 1, products: [] as TopProduct[] })),
@@ -101,6 +103,7 @@ function Dashboard() {
                 api.funnel().catch(() => null),
                 api.orderHealth(30).catch(() => null),
                 api.overview(overviewPeriod, overviewCompare).catch(() => null),
+                api.changeLog(periodDays).catch(() => ({ days: 0, valid_areas: [], entries: [] as ChangeLogEntry[] })),
             ]);
             setSummary(s);
             setTrend(t.days);
@@ -109,6 +112,7 @@ function Dashboard() {
             setFunnel(f);
             setOrderHealth(oh);
             setOverview(ov);
+            setChangeLogEntries(cl.entries);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unable to load dashboard data");
         } finally {
@@ -139,6 +143,12 @@ function Dashboard() {
     const chartData = trend
         .filter((d) => d.cvr !== null)
         .map((d) => ({ day: formatDay(d.date, periodDays > 7), cvr: d.cvr }));
+    // "Change-log markers on every trend chart" (checklist section 8, P1) -
+    // only mark a change if its date actually falls inside the chart's window.
+    const chartDayLabels = new Set(chartData.map((d) => d.day));
+    const chartMarkers = changeLogEntries
+        .map((e) => ({ ...e, label: formatDay(e.date, periodDays > 7) }))
+        .filter((e) => chartDayLabels.has(e.label));
     const cvrDiff =
         cvr?.yesterday_cvr != null && cvr?.previous_cvr != null
             ? Math.round((cvr.yesterday_cvr - cvr.previous_cvr) * 100) / 100
@@ -225,6 +235,7 @@ function Dashboard() {
             label: "Optimization",
             items: [
                 { name: "Recommendations", icon: Lightbulb },
+                { name: "Change Log", icon: History },
                 { name: "Alarm Rules", icon: Bell },
                 { name: "Alert History", icon: Activity },
                 { name: "Reports", icon: FileText },
@@ -374,6 +385,11 @@ function Dashboard() {
                         {activeNav === "Recommendations" && (
                             <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
                                 <CroRecommendations />
+                            </div>
+                        )}
+                        {activeNav === "Change Log" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <ChangeLog />
                             </div>
                         )}
                         {activeNav === "Conversion Analytics" && (
@@ -657,9 +673,27 @@ function Dashboard() {
                                                 <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} unit="%" />
                                                 <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
                                                 <Area type="monotone" dataKey="cvr" stroke="#3b82f6" strokeWidth={3} fill="url(#cvrGradient)" />
+                                                {chartMarkers.map((m) => (
+                                                    <ReferenceLine
+                                                        key={m.id}
+                                                        x={m.label}
+                                                        stroke="#f59e0b"
+                                                        strokeDasharray="4 3"
+                                                        label={{ value: "●", position: "top", fill: "#f59e0b", fontSize: 10 }}
+                                                    />
+                                                ))}
                                             </AreaChart>
                                         </ResponsiveContainer>
                                     </div>
+                                    {chartMarkers.length > 0 && (
+                                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                                            {chartMarkers.map((m) => (
+                                                <span key={m.id} className="flex items-center gap-1">
+                                                    <span className="text-amber-500">●</span> {m.label}: {m.change}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </section>
 
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
