@@ -3,6 +3,10 @@ Background scheduler (simple, no extra package).
 
 Har SYNC_INTERVAL_MINUTES (default 15) minute mein:
   1. Shopify se pichhle 2 din ke orders sync
+     (startup par aur din mein ek baar: pichhle BACKFILL_DAYS (default 60)
+     din ka full backfill - warna "4-week same-weekday average" jaise
+     comparisons ke liye purana data DB mein hota hi nahi aur baseline 0
+     dikhta hai)
   2. Quilt alarm check
   3. CVR alarm check
 
@@ -14,6 +18,7 @@ Har SYNC_INTERVAL_MINUTES (default 15) minute mein:
 import logging
 import os
 import threading
+import time
 
 from cvr_alarm import check_cvr_alarm
 from database import SessionLocal
@@ -26,6 +31,11 @@ logging.basicConfig(level=logging.INFO)
 
 SHOP = os.getenv("SHOPIFY_SHOP", "guz0he-21.myshopify.com")
 INTERVAL_MINUTES = max(5, int(os.getenv("SYNC_INTERVAL_MINUTES", "15")))
+# Shopify returns only the last 60 days of orders without the read_all_orders
+# scope, so 60 is the most we can backfill by default.
+BACKFILL_DAYS = max(2, min(60, int(os.getenv("BACKFILL_DAYS", "60"))))
+BACKFILL_EVERY_SECONDS = 24 * 60 * 60
+_last_backfill_at: float = 0.0
 
 _stop_event = threading.Event()
 _thread: threading.Thread | None = None
@@ -34,10 +44,13 @@ last_run: dict = {"status": "not_run_yet"}
 
 def run_once() -> dict:
     """Ek baar sync + dono alarms. Error aaye toh log karo, scheduler band mat karo."""
-    global last_run
+    global last_run, _last_backfill_at
     db = SessionLocal()
     try:
-        result = sync_store(db, SHOP, days=2)
+        backfill = time.time() - _last_backfill_at >= BACKFILL_EVERY_SECONDS
+        result = sync_store(db, SHOP, days=BACKFILL_DAYS if backfill else 2)
+        if backfill and result.get("status") == "success":
+            _last_backfill_at = time.time()
         if result.get("status") == "skipped":
             last_run = {"status": "skipped", "reason": result.get("reason")}
             logger.info("Scheduler run skipped: %s", last_run)
@@ -52,6 +65,7 @@ def run_once() -> dict:
 
         last_run = {
             "status": "success",
+            "sync_days": BACKFILL_DAYS if backfill else 2,
             "orders": result["orders"],
             "quilt_alarm": quilt.get("status"),
             "cvr_alarm": cvr.get("status"),

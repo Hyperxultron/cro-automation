@@ -140,6 +140,7 @@ export type Overview = {
   period: "yesterday" | "today" | "last7";
   period_label: string;
   compare: "4week_avg" | "last_week";
+  history_start: string | null;
   is_partial: boolean;
   timezone: string;
   as_of: string;
@@ -195,10 +196,12 @@ export type ChangeLogResponse = {
   entries: ChangeLogEntry[];
 };
 
-export type SalesTrendDay = { date: string; revenue: number; orders: number };
+// revenue/orders are null for days before our synced order history starts.
+export type SalesTrendDay = { date: string; revenue: number | null; orders: number | null };
 
 export type SalesTrend = {
   days: number;
+  history_start: string | null;
   current: SalesTrendDay[];
   previous: SalesTrendDay[];
 };

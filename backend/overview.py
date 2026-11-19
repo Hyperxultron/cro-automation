@@ -58,6 +58,29 @@ def _order_stats(db: Session, store: models.Store, start, end) -> dict:
     return {"orders": orders, "revenue": revenue, "aov": aov}
 
 
+def history_start_date(db: Session, store: models.Store):
+    """
+    First local day we actually have synced orders for. Any baseline day before
+    this is "no data", not "zero orders" - treating it as 0 is what made the
+    Overview print "vs $0 baseline" / "4-week Wed average: 0".
+    """
+    first = (
+        db.query(func.min(models.Order.created_at))
+        .filter(models.Order.store_id == store.id, models.Order.shopify_order_id.isnot(None))
+        .scalar()
+    )
+    if first is None:
+        return None
+    if first.tzinfo is None:
+        first = first.replace(tzinfo=dt_tz.utc)
+    # The first day is usually only partly synced, so start from the day after.
+    return first.astimezone(_tz(store)).date() + timedelta(days=1)
+
+
+def _has_history(history_start, day) -> bool:
+    return history_start is not None and day >= history_start
+
+
 def _pct_change(current, previous):
     if previous is None or previous == 0:
         return None
@@ -67,6 +90,8 @@ def _pct_change(current, previous):
 def _metric_block(value, baseline, too_early: bool, baseline_label: str, round_abs: int = 2):
     """value/baseline -> {value, baseline_value, change_abs, change_pct, too_early, baseline_label}."""
     change_abs = None if (value is None or baseline is None) else round(value - baseline, round_abs)
+    if round_abs == 0 and change_abs is not None:
+        change_abs = int(change_abs) if float(change_abs).is_integer() else round(change_abs, 1)
     change_pct = None if too_early else _pct_change(value, baseline)
     return {
         "value": value,
@@ -122,38 +147,63 @@ def fetch_overview(
         period_label = f"Yesterday ({target_date.strftime('%a %d %b')}, complete day)"
 
     current = _order_stats(db, store, start, end)
+    history_start = history_start_date(db, store)
+    empty_baseline = {"orders": None, "revenue": None, "aov": None}
 
     # ---- 2. Baseline window(s) ----------------------------------------------
+    # A baseline window that starts before our synced order history has no
+    # real data, so it is reported as missing (None), never as 0.
     if period == "last7":
-        prior_start, _ = _day_bounds_utc(target_date - timedelta(days=13), tz)
+        prior_first_day = target_date - timedelta(days=13)
+        prior_start, _ = _day_bounds_utc(prior_first_day, tz)
         _, prior_end = _day_bounds_utc(target_date - timedelta(days=7), tz)
-        baseline = _order_stats(db, store, prior_start, prior_end)
+        baseline = (
+            _order_stats(db, store, prior_start, prior_end)
+            if _has_history(history_start, prior_first_day) else empty_baseline
+        )
         baseline_label = "vs prior 7 days"
     elif period == "today" and is_partial:
         # Compare today-so-far against the SAME elapsed window, same weekday last week.
         last_week_same_day = target_date - timedelta(days=7)
         lw_start, _ = _day_bounds_utc(last_week_same_day, tz)
-        baseline = _order_stats(db, store, lw_start, lw_start + elapsed)
+        baseline = (
+            _order_stats(db, store, lw_start, lw_start + elapsed)
+            if _has_history(history_start, last_week_same_day) else empty_baseline
+        )
         baseline_label = f"vs same time {WEEKDAY_NAMES[last_week_same_day.weekday()]} last week"
     elif compare == "last_week":
         last_week_same_day = target_date - timedelta(days=7)
         lw_start, lw_end = _day_bounds_utc(last_week_same_day, tz)
-        baseline = _order_stats(db, store, lw_start, lw_end)
+        baseline = (
+            _order_stats(db, store, lw_start, lw_end)
+            if _has_history(history_start, last_week_same_day) else empty_baseline
+        )
         baseline_label = f"vs same {WEEKDAY_NAMES[last_week_same_day.weekday()]} last week"
     else:
         # 4-week same-weekday average (default) - more stable at ~70 orders/day.
+        # Only weeks we actually have order history for are averaged.
         compare = "4week_avg"
-        weekday_dates = _same_weekday_dates_back(target_date, 4)
+        weekday_dates = [
+            d for d in _same_weekday_dates_back(target_date, 4) if _has_history(history_start, d)
+        ]
         stats_list = []
         for d in weekday_dates:
             s, e = _day_bounds_utc(d, tz)
             stats_list.append(_order_stats(db, store, s, e))
-        baseline = {
-            "orders": round(sum(s["orders"] for s in stats_list) / len(stats_list), 1),
-            "revenue": round(sum(s["revenue"] for s in stats_list) / len(stats_list), 2),
-            "aov": round(sum(s["aov"] for s in stats_list) / len(stats_list), 2),
-        }
-        baseline_label = f"vs 4-week {WEEKDAY_NAMES[target_date.weekday()]} average"
+        if stats_list:
+            baseline = {
+                "orders": round(sum(s["orders"] for s in stats_list) / len(stats_list), 1),
+                "revenue": round(sum(s["revenue"] for s in stats_list) / len(stats_list), 2),
+                "aov": round(sum(s["aov"] for s in stats_list) / len(stats_list), 2),
+            }
+        else:
+            baseline = empty_baseline
+        weeks = len(stats_list)
+        baseline_label = (
+            f"vs 4-week {WEEKDAY_NAMES[target_date.weekday()]} average"
+            if weeks in (0, 4)
+            else f"vs {weeks}-week {WEEKDAY_NAMES[target_date.weekday()]} average"
+        )
 
     too_early_orders = current["orders"] < MIN_ORDERS_FOR_COMPARISON
 
@@ -188,10 +238,16 @@ def fetch_overview(
             # baseline["orders"] is already the prior 7-day TOTAL (the window
             # spans 7 days), so no extra *7 here.
             cvr_baseline = (
-                round(baseline["orders"] / prior_sessions * 100, 2) if prior_sessions else None
+                round(baseline["orders"] / prior_sessions * 100, 2)
+                if prior_sessions and baseline["orders"] is not None else None
             )
         else:
-            weekday_dates = [d.isoformat() for d in _same_weekday_dates_back(target_date, 4)]
+            # CVR comes straight from Shopify Analytics (not our order DB), so it
+            # has full history. Follow the same comparison the picker asks for.
+            if period == "today" or compare == "last_week":
+                weekday_dates = [(target_date - timedelta(days=7)).isoformat()]
+            else:
+                weekday_dates = [d.isoformat() for d in _same_weekday_dates_back(target_date, 4)]
             comparable = [by_date[d]["cvr"] for d in weekday_dates if by_date.get(d) and by_date[d]["cvr"] is not None]
             cvr_baseline = round(sum(comparable) / len(comparable), 2) if comparable else None
         cvr_too_early = (cvr_sessions or 0) < MIN_SESSIONS_FOR_COMPARISON
@@ -225,6 +281,7 @@ def fetch_overview(
         "period": period,
         "period_label": period_label,
         "compare": compare,
+        "history_start": history_start.isoformat() if history_start else None,
         "is_partial": is_partial,
         "timezone": store.timezone or "UTC",
         "as_of": now_local.isoformat(),

@@ -40,9 +40,14 @@ from overview import (
     WEEKDAY_NAMES,
     _day_bounds_utc,
     _metric_block,
+    _has_history,
     _same_weekday_dates_back,
     _tz,
+    history_start_date,
 )
+
+_KEYS = ("orders", "total", "gross", "discounts", "returns", "net", "shipping", "tax")
+_EMPTY = {k: None for k in _KEYS}
 
 
 def _sales_stats(db: Session, store: models.Store, start, end) -> dict:
@@ -89,20 +94,29 @@ def fetch_sales_trend(db: Session, store: models.Store, days: int = 14) -> dict:
     today = datetime.now(tz).date()
     yesterday = today - timedelta(days=1)
 
+    history_start = history_start_date(db, store)
+
+    def point(day):
+        # Days before our synced order history are unknown (None), not $0 -
+        # otherwise the chart draws a flat zero line and then a fake jump.
+        if not _has_history(history_start, day):
+            return {"date": day.isoformat(), "revenue": None, "orders": None}
+        stats = _sales_stats(db, store, *_day_bounds_utc(day, tz))
+        return {"date": day.isoformat(), "revenue": stats["total"], "orders": stats["orders"]}
+
     current = []
     previous = []
     for i in range(days - 1, -1, -1):
         day = yesterday - timedelta(days=i)
-        start, end = _day_bounds_utc(day, tz)
-        stats = _sales_stats(db, store, start, end)
-        current.append({"date": day.isoformat(), "revenue": stats["total"], "orders": stats["orders"]})
+        current.append(point(day))
+        previous.append(point(day - timedelta(days=days)))
 
-        prior_day = day - timedelta(days=days)
-        p_start, p_end = _day_bounds_utc(prior_day, tz)
-        p_stats = _sales_stats(db, store, p_start, p_end)
-        previous.append({"date": prior_day.isoformat(), "revenue": p_stats["total"], "orders": p_stats["orders"]})
-
-    return {"days": days, "current": current, "previous": previous}
+    return {
+        "days": days,
+        "history_start": history_start.isoformat() if history_start else None,
+        "current": current,
+        "previous": previous,
+    }
 
 
 def fetch_sales_breakdown(db: Session, store: models.Store, period: str = "yesterday", compare: str = "4week_avg") -> dict:
@@ -132,27 +146,41 @@ def fetch_sales_breakdown(db: Session, store: models.Store, period: str = "yeste
         period_label = f"Yesterday ({target_date.strftime('%a %d %b')})"
 
     current = _sales_stats(db, store, start, end)
+    history_start = history_start_date(db, store)
 
     if period == "last7":
-        prior_start, _ = _day_bounds_utc(target_date - timedelta(days=13), tz)
+        prior_first_day = target_date - timedelta(days=13)
+        prior_start, _ = _day_bounds_utc(prior_first_day, tz)
         _, prior_end = _day_bounds_utc(target_date - timedelta(days=7), tz)
-        baseline = _sales_stats(db, store, prior_start, prior_end)
+        baseline = (
+            _sales_stats(db, store, prior_start, prior_end)
+            if _has_history(history_start, prior_first_day) else _EMPTY
+        )
         baseline_label = "vs prior 7 days"
     elif compare == "last_week" or period == "today":
         last_week_same_day = target_date - timedelta(days=7)
         lw_start, lw_end = _day_bounds_utc(last_week_same_day, tz)
-        baseline = _sales_stats(db, store, lw_start, lw_end)
-        baseline_label = f"vs same {WEEKDAY_NAMES[last_week_same_day.weekday()]} last week"
+        if period == "today":
+            # Same elapsed window as today-so-far, like /dashboard/overview.
+            lw_end = lw_start + (end - start)
+        baseline = (
+            _sales_stats(db, store, lw_start, lw_end)
+            if _has_history(history_start, last_week_same_day) else _EMPTY
+        )
+        prefix = "vs same time" if period == "today" else "vs same"
+        baseline_label = f"{prefix} {WEEKDAY_NAMES[last_week_same_day.weekday()]} last week"
     else:
         compare = "4week_avg"
-        weekday_dates = _same_weekday_dates_back(target_date, 4)
+        weekday_dates = [
+            d for d in _same_weekday_dates_back(target_date, 4) if _has_history(history_start, d)
+        ]
         stats_list = [
             _sales_stats(db, store, *_day_bounds_utc(d, tz)) for d in weekday_dates
         ]
-        baseline = {
-            key: round(sum(s[key] for s in stats_list) / len(stats_list), 2)
-            for key in ("orders", "total", "gross", "discounts", "returns", "net", "shipping", "tax")
-        }
+        baseline = (
+            {key: round(sum(s[key] for s in stats_list) / len(stats_list), 2) for key in _KEYS}
+            if stats_list else _EMPTY
+        )
         baseline_label = f"vs 4-week {WEEKDAY_NAMES[target_date.weekday()]} average"
 
     too_early = current["orders"] < MIN_ORDERS_FOR_COMPARISON

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
     api, formatMoney, timeAgo,
-    type ChangeLogEntry, type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct
+    type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct
 } from "../../services/api";
 import ChangeLog from "../changelog/ChangeLog";
 import AlarmRules from "../alarms/AlarmRules";
@@ -21,7 +21,7 @@ import {
     ShoppingBag, ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
 import {
-    Area, AreaChart, Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer,
+    Bar, BarChart, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer,
     Tooltip, XAxis, YAxis
 } from "recharts";
 
@@ -32,9 +32,6 @@ const formatDay = (iso: string, long: boolean) => {
         : d.toLocaleDateString("en-US", { weekday: "short" });
 };
 
-const pct = (value: number | null | undefined) =>
-    value === null || value === undefined ? "—" : `${value > 0 ? "+" : ""}${value}%`;
-
 // "Show change both ways everywhere, e.g. +0.34 pts (+16%)" (checklist section 1, P2).
 // absUnit lets us label the absolute delta (pts, orders, ₹, etc.) distinctly from the %.
 const changeBothWays = (absValue: number | null, pctValue: number | null, absUnit = "") => {
@@ -44,29 +41,33 @@ const changeBothWays = (absValue: number | null, pctValue: number | null, absUni
     return `${absStr} (${pctStr})`;
 };
 
-const initialAlarms = [
-    {
-        id: 1,
-        title: "Quilt Orders Monitoring",
-        description: "Alert if no quilt orders are received for 12 hours.",
-        condition: "No orders for 12 hours",
-        enabled: true,
-        status: "Monitoring",
-        icon: ShoppingBag,
-    },
-    {
-        id: 2,
-        title: "CVR Performance Alert",
-        description: "Alert when yesterday's CVR drops 20% or more compared to the day before.",
-        condition: "CVR drops by 20%",
-        enabled: true,
-        status: "Monitoring",
-        icon: TrendingUp,
-    },
-];
+// Same "both ways" format for money: "+$1,000 (+16.7%)".
+const moneyChangeBothWays = (absValue: number | null, pctValue: number | null, currency?: string | null) => {
+    if (absValue === null || pctValue === null) return "—";
+    const sign = absValue > 0 ? "+" : absValue < 0 ? "-" : "";
+    return `${sign}${formatMoney(Math.abs(absValue), currency)} (${pctValue > 0 ? "+" : ""}${pctValue}%)`;
+};
+
+// Same "too early to compare" threshold as the backend (checklist section 1, P1).
+const MIN_SESSIONS_FOR_COMPARISON = 500;
+
+const shiftDate = (iso: string, days: number) => {
+    const d = new Date(`${iso}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+};
+
+// Which live check belongs to which alarm rule (rules now come from the backend,
+// not a hardcoded list - so the Overview can't show a rule that doesn't exist).
+const ruleKind = (rule: AlarmRuleItem): "quilt" | "cvr" | "other" => {
+    const t = rule.title.toLowerCase();
+    if (t.includes("quilt")) return "quilt";
+    if (t.includes("conversion") || t.includes("cvr")) return "cvr";
+    return "other";
+};
 
 function Dashboard() {
-    const [alarms, setAlarms] = useState(initialAlarms);
+    const [alarmRules, setAlarmRules] = useState<AlarmRuleItem[]>([]);
     const [activeNav, setActiveNav] = useState("Overview");
     const [mobileMenu, setMobileMenu] = useState(false);
     const [period, setPeriod] = useState("Last 7 days");
@@ -99,17 +100,19 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t, tp, ot, f, oh, ov, cl, st, sb] = await Promise.all([
+            const [s, t, tp, ot, f, oh, ov, cl, st, sb, ar] = await Promise.all([
                 api.summary(),
-                api.cvrTrend(periodDays).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
+                // 2x the window: the earlier half is the dashed "previous period" line.
+                api.cvrTrend(periodDays * 2).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
                 api.topProducts(1, 5).catch(() => ({ days: 1, products: [] as TopProduct[] })),
                 api.ordersTrend(7).catch(() => ({ days: 7, trend: [] as OrdersTrendDay[] })),
                 api.funnel().catch(() => null),
                 api.orderHealth(30).catch(() => null),
                 api.overview(overviewPeriod, overviewCompare).catch(() => null),
-                api.changeLog(periodDays).catch(() => ({ days: 0, valid_areas: [], entries: [] as ChangeLogEntry[] })),
+                api.changeLog(Math.max(periodDays, 28)).catch(() => ({ days: 0, valid_areas: [], entries: [] as ChangeLogEntry[] })),
                 api.salesTrend(14).catch(() => null),
                 api.salesBreakdown(overviewPeriod, overviewCompare).catch(() => null),
+                api.alarmRules().catch(() => [] as AlarmRuleItem[]),
             ]);
             setSummary(s);
             setTrend(t.days);
@@ -121,6 +124,7 @@ function Dashboard() {
             setChangeLogEntries(cl.entries);
             setSalesTrend(st);
             setSalesBreakdown(sb);
+            setAlarmRules(ar);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unable to load dashboard data");
         } finally {
@@ -148,15 +152,39 @@ function Dashboard() {
     const quilt = summary?.quilt_alarm;
     const cvr = summary?.cvr;
     const currency = summary?.store.currency;
-    const chartData = trend
-        .filter((d) => d.cvr !== null)
-        .map((d) => ({ day: formatDay(d.date, periodDays > 7), cvr: d.cvr }));
+    // Conversion trend (checklist section 1, P2): straight line with dots for
+    // this period, the period before as a dashed line, sessions as bars behind,
+    // and real dates on the axis.
+    const currentDays = trend.slice(-periodDays);
+    const previousDays = trend.length > periodDays ? trend.slice(0, trend.length - periodDays) : [];
+    const chartData = currentDays.map((d, i) => {
+        const prev = previousDays.length === periodDays ? previousDays[i] : undefined;
+        return { day: formatDay(d.date, true), cvr: d.cvr, previousCvr: prev?.cvr ?? null, sessions: d.sessions };
+    });
+    const markersFor = (labels: Set<string>) =>
+        changeLogEntries
+            .map((e) => ({ ...e, label: formatDay(e.date, true) }))
+            .filter((e) => labels.has(e.label));
     // "Change-log markers on every trend chart" (checklist section 8, P1) -
     // only mark a change if its date actually falls inside the chart's window.
-    const chartDayLabels = new Set(chartData.map((d) => d.day));
-    const chartMarkers = changeLogEntries
-        .map((e) => ({ ...e, label: formatDay(e.date, periodDays > 7) }))
-        .filter((e) => chartDayLabels.has(e.label));
+    const chartMarkers = markersFor(new Set(chartData.map((d) => d.day)));
+
+    // Headline for the trend card: latest complete day vs the SAME weekday last
+    // week (not the day before), with the too-early guard.
+    const cvrByDate = new Map(trend.map((d) => [d.date, d]));
+    const latestDay = currentDays.length ? currentDays[currentDays.length - 1] : undefined;
+    const lastWeekDay = latestDay ? cvrByDate.get(shiftDate(latestDay.date, -7)) : undefined;
+    const trendTooEarly = !latestDay || latestDay.sessions < MIN_SESSIONS_FOR_COMPARISON;
+    const trendChange =
+        latestDay?.cvr != null && lastWeekDay?.cvr != null && !trendTooEarly
+            ? {
+                  abs: Math.round((latestDay.cvr - lastWeekDay.cvr) * 100) / 100,
+                  pct: lastWeekDay.cvr ? Math.round(((latestDay.cvr - lastWeekDay.cvr) / lastWeekDay.cvr) * 1000) / 10 : null,
+              }
+            : null;
+    const lastWeekLabel = latestDay
+        ? `vs ${new Date(`${shiftDate(latestDay.date, -7)}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" })} last week`
+        : "";
     // "Total sales over time" - current period as a solid line, the same
     // number of days right before it as a dashed comparison line, aligned
     // by position (day 1 of this window vs day 1 of the previous window),
@@ -166,14 +194,20 @@ function Dashboard() {
         current: d.revenue,
         previous: salesTrend?.previous[i]?.revenue ?? null,
     }));
-    const salesTotal = salesChartData.reduce((sum, d) => sum + d.current, 0);
+    const salesMarkers = markersFor(new Set(salesChartData.map((d) => d.day)));
+    // Days before our synced order history are null (unknown), not $0. Only
+    // compare totals when both windows are fully covered.
+    const salesCurrentComplete = salesChartData.length > 0 && salesChartData.every((d) => d.current !== null);
+    const salesPrevComplete = salesChartData.length > 0 && salesChartData.every((d) => d.previous !== null);
+    const salesTotal = salesChartData.reduce((sum, d) => sum + (d.current ?? 0), 0);
     const salesTotalPrev = salesChartData.reduce((sum, d) => sum + (d.previous ?? 0), 0);
-    const salesTotalChangePct = salesTotalPrev > 0 ? Math.round(((salesTotal - salesTotalPrev) / salesTotalPrev) * 1000) / 10 : null;
-
-    const cvrDiff =
-        cvr?.yesterday_cvr != null && cvr?.previous_cvr != null
-            ? Math.round((cvr.yesterday_cvr - cvr.previous_cvr) * 100) / 100
+    const salesTotalChangePct =
+        salesCurrentComplete && salesPrevComplete && salesTotalPrev > 0
+            ? Math.round(((salesTotal - salesTotalPrev) / salesTotalPrev) * 1000) / 10
             : null;
+    const historyStartLabel = salesTrend?.history_start
+        ? new Date(`${salesTrend.history_start}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        : null;
 
     const quiltStatusText: Record<string, string> = {
         normal: "Normal",
@@ -181,7 +215,7 @@ function Dashboard() {
         alarm_active: "ALERT",
         no_quilt_orders_yet: "No quilt orders yet",
         no_quilt_products: "No quilt products",
-        no_active_rule: "Rule inactive",
+        no_active_rule: "No active quilt rule",
     };
     const quiltAlert = quilt?.status === "alarm_triggered" || quilt?.status === "alarm_active";
     const cvrAlert = cvr?.drop_percent != null && cvr.drop_percent >= 20;
@@ -203,13 +237,15 @@ function Dashboard() {
         },
     };
 
+    const quiltRuleOff = quilt?.status === "no_active_rule";
+    const activeRuleCount = alarmRules.filter((r) => r.is_active).length;
     const activities = summary
         ? [
               {
                   title: "Quilt orders monitoring",
                   detail: alarmLive[1].text,
-                  time: quiltAlert ? "Alert" : quiltStatusText[quilt?.status ?? ""] ?? "Active",
-                  type: quiltAlert ? "alert" : "monitor",
+                  time: quiltAlert ? "Alert" : quiltRuleOff ? "Off" : quilt?.status === "normal" ? "Normal" : "Active",
+                  type: quiltAlert ? "alert" : quiltRuleOff ? "email" : "monitor",
               },
               {
                   title: "CVR comparison",
@@ -232,15 +268,6 @@ function Dashboard() {
           ]
         : [];
 
-    const toggleAlarm = (id: number) => {
-        setAlarms((current) =>
-            current.map((alarm) =>
-                alarm.id === id
-                    ? { ...alarm, enabled: !alarm.enabled }
-                    : alarm
-            )
-        );
-    };
 
     const navGroups = [
         {
@@ -567,13 +594,20 @@ function Dashboard() {
                                         return changePct >= 0 ? "emerald" : "red";
                                     };
 
-                                    const renderChange = (m: typeof revenueMetric, absUnit: string) => {
+                                    const renderChange = (m: typeof revenueMetric, absUnit: string, money = false) => {
                                         if (!m) return { text: loading ? "Loading…" : "—", tone: "slate", showArrow: false };
                                         if (m.too_early) return { text: "Too early to compare", tone: "slate", showArrow: false };
-                                        const text = changeBothWays(m.change_abs, m.change_pct, absUnit);
+                                        if (m.baseline_value === null) return { text: "No history yet", tone: "slate", showArrow: false };
+                                        const text = money
+                                            ? moneyChangeBothWays(m.change_abs, m.change_pct, currency)
+                                            : changeBothWays(m.change_abs, m.change_pct, absUnit);
                                         const tone = changeTone(m.change_pct, m.too_early);
-                                        return { text, tone, showArrow: m.change_pct !== null && m.change_pct !== 0 };
+                                        return { text, tone, showArrow: text !== "—" && m.change_pct !== null && m.change_pct !== 0 };
                                     };
+                                    const baselineNote = (m: typeof revenueMetric, fmt: (v: number) => string) =>
+                                        !m ? "Loading…" : m.baseline_value === null
+                                            ? `${m.baseline_label}: not enough order history yet`
+                                            : `${m.baseline_label}: ${fmt(m.baseline_value)}`;
 
                                     const cards = [
                                         {
@@ -581,18 +615,18 @@ function Dashboard() {
                                             period: periodLabel,
                                             value: loading ? "…" : revenueMetric?.value != null ? formatMoney(revenueMetric.value, currency) : "—",
                                             icon: MoneyIcon, color: "rose",
-                                            change: renderChange(revenueMetric, ""),
-                                            note: aovMetric?.value != null ? `AOV ${formatMoney(aovMetric.value, currency)} · vs ${formatMoney(aovMetric.baseline_value ?? 0, currency)} baseline` : "Loading…",
+                                            change: renderChange(revenueMetric, "", true),
+                                            note: aovMetric?.value != null
+                                                ? `AOV ${formatMoney(aovMetric.value, currency)} · ${baselineNote(revenueMetric, (v) => formatMoney(v, currency))}`
+                                                : "Loading…",
                                         },
                                         {
                                             label: "Quilt Orders Today",
                                             period: "Today",
                                             value: loading ? "…" : String(summary?.today.quilt_orders ?? "—"),
-                                            change: {
-                                                text: summary?.changes.quilt_orders_pct == null ? "—" : `${pct(summary.changes.quilt_orders_pct)} vs same time yday`,
-                                                tone: (summary?.changes.quilt_orders_pct ?? 0) >= 0 ? "emerald" : "red",
-                                                showArrow: summary?.changes.quilt_orders_pct != null,
-                                            },
+                                            // Quilt volume (a handful a day) is always below the ~20-order
+                                            // threshold, so a % change here would be noise.
+                                            change: { text: summary ? "Too early to compare" : "—", tone: "slate", showArrow: false },
                                             icon: ShoppingBag, color: "blue",
                                             note: summary ? `Yesterday: ${summary.yesterday.quilt_orders} quilt orders (store time)` : "Loading…",
                                         },
@@ -610,15 +644,15 @@ function Dashboard() {
                                             value: loading ? "…" : ordersMetric?.value != null ? String(ordersMetric.value) : "—",
                                             icon: Activity, color: "emerald",
                                             change: renderChange(ordersMetric, ""),
-                                            note: ordersMetric ? `${ordersMetric.baseline_label}: ${ordersMetric.baseline_value}` : "Loading…",
+                                            note: baselineNote(ordersMetric, (v) => String(v)),
                                         },
                                         {
                                             label: "Open Alerts",
                                             period: "Now",
                                             value: loading ? "…" : String(summary?.open_alerts ?? 0),
-                                            change: { text: `${summary?.active_rules ?? 0} rules active`, tone: "slate", showArrow: false },
+                                            change: { text: "", tone: "slate", showArrow: false },
                                             icon: Bell, color: "amber",
-                                            note: "Email delivery setup pending",
+                                            note: `${activeRuleCount} ${activeRuleCount === 1 ? "rule" : "rules"} active · email delivery setup pending`,
                                         },
                                     ];
 
@@ -682,15 +716,12 @@ function Dashboard() {
                                     {salesChartData.length === 0 && (
                                         <p className="mb-2 text-xs text-slate-400">{loading ? "Loading…" : "No sales data available for this period."}</p>
                                     )}
+                                    {historyStartLabel && (!salesCurrentComplete || !salesPrevComplete) && (
+                                        <p className="mb-2 text-xs text-amber-600">Order history in this app starts {historyStartLabel}; earlier days are blank, not $0.</p>
+                                    )}
                                     <div className="h-64 w-full">
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={salesChartData}>
-                                                <defs>
-                                                    <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="0%" stopColor="#10b981" stopOpacity={0.25} />
-                                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                                    </linearGradient>
-                                                </defs>
+                                            <ComposedChart data={salesChartData}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
                                                 <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
                                                 <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
@@ -698,11 +729,16 @@ function Dashboard() {
                                                     contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }}
                                                     formatter={(value, name) => [formatMoney(Number(value) || 0, currency), name === "current" ? "This period" : "Previous period"]}
                                                 />
-                                                <Area type="monotone" dataKey="current" stroke="#10b981" strokeWidth={3} fill="url(#salesGradient)" />
-                                                <Area type="monotone" dataKey="previous" stroke="#94a3b8" strokeWidth={2} strokeDasharray="4 3" fill="none" />
-                                            </AreaChart>
+                                                <Line type="linear" dataKey="previous" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} />
+                                                <Line type="linear" dataKey="current" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
+                                                {salesMarkers.map((m) => (
+                                                    <ReferenceLine key={m.id} x={m.label} stroke="#f59e0b" strokeDasharray="4 3"
+                                                        label={{ value: "●", position: "top", fill: "#f59e0b", fontSize: 10 }} />
+                                                ))}
+                                            </ComposedChart>
                                         </ResponsiveContainer>
                                     </div>
+                                    <p className="mt-2 text-xs text-slate-400">Solid line with dots: this period · dashed: the {salesTrend?.days ?? 14} days before</p>
                                 </section>
 
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
@@ -730,8 +766,8 @@ function Dashboard() {
                                                                 {row.value === null ? "—" : formatMoney(lowerIsBetter ? -Math.abs(row.value) : row.value, currency)}
                                                             </p>
                                                             {!salesBreakdown.too_early && row.change_pct !== null && (
-                                                                <p className={`text-[11px] ${isGood ? "text-emerald-600" : "text-red-500"}`}>
-                                                                    {row.change_pct > 0 ? "+" : ""}{row.change_pct}%
+                                                                <p className={`text-[11px] ${row.change_pct === 0 ? "text-slate-400" : isGood ? "text-emerald-600" : "text-red-500"}`}>
+                                                                    {moneyChangeBothWays(row.change_abs, row.change_pct, currency)}
                                                                 </p>
                                                             )}
                                                         </div>
@@ -743,6 +779,12 @@ function Dashboard() {
                                     {salesBreakdown?.too_early && (
                                         <p className="mt-3 text-xs text-slate-400">Too early to compare - below the usual order threshold for this period.</p>
                                     )}
+                                    {salesBreakdown && !salesBreakdown.too_early && salesBreakdown.rows.every((r) => r.baseline_value === null) && (
+                                        <p className="mt-3 text-xs text-slate-400">No comparison yet - not enough order history for {salesBreakdown.rows[0]?.baseline_label.replace(/^vs /, "the ")}.</p>
+                                    )}
+                                    {salesBreakdown && !salesBreakdown.too_early && salesBreakdown.rows[0]?.baseline_value !== null && (
+                                        <p className="mt-3 text-xs text-slate-400">Changes are {salesBreakdown.rows[0]?.baseline_label}.</p>
+                                    )}
                                     <p className="mt-3 text-xs text-slate-400">{salesBreakdown?.note}</p>
                                 </section>
                             </div>
@@ -752,46 +794,64 @@ function Dashboard() {
                                     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                                         <div>
                                             <h3 className="font-bold text-slate-900">Conversion Rate Trend</h3>
-                                            <p className="mt-1 text-xs text-slate-400">Daily conversion rate from Shopify Analytics (store timezone)</p>
+                                            <p className="mt-1 text-xs text-slate-400">Daily conversion rate from Shopify Analytics (store timezone) · bars: sessions</p>
                                         </div>
                                         <select value={period} onChange={(e) => setPeriod(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none">
                                             <option>Last 7 days</option>
                                             <option>Last 30 days</option>
                                         </select>
                                     </div>
-                                    <div className="mb-4 flex items-end gap-3">
-                                        <span className="text-3xl font-bold text-slate-900">{cvr?.yesterday_cvr != null ? `${cvr.yesterday_cvr}%` : "—"}</span>
-                                        <span className={`mb-1 flex items-center gap-1 text-xs font-semibold ${cvrDiff !== null && cvrDiff < 0 ? "text-red-600" : "text-emerald-600"}`}><ArrowUpRight size={15} className={cvrDiff !== null && cvrDiff < 0 ? "rotate-90" : ""} /> {cvrDiff === null ? "—" : `${cvrDiff > 0 ? "+" : ""}${cvrDiff} pts vs day before`}</span>
+                                    <div className="mb-4 flex flex-wrap items-end gap-3">
+                                        <span className="text-3xl font-bold text-slate-900">{latestDay?.cvr != null ? `${latestDay.cvr}%` : "—"}</span>
+                                        {latestDay && (
+                                            <span className="mb-1 text-xs text-slate-400">{formatDay(latestDay.date, true)} ({latestDay.cvr != null ? `~${latestDay.sessions.toLocaleString()} sessions` : "no data"})</span>
+                                        )}
+                                        {trendTooEarly && latestDay ? (
+                                            <span className="mb-1 text-xs font-semibold text-slate-400">Too early to compare</span>
+                                        ) : trendChange && trendChange.pct !== null ? (
+                                            <span className={`mb-1 flex items-center gap-1 text-xs font-semibold ${trendChange.abs === 0 ? "text-slate-400" : trendChange.abs < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                                                {trendChange.abs !== 0 && (trendChange.abs < 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />)}
+                                                {changeBothWays(trendChange.abs, trendChange.pct, " pts")} {lastWeekLabel}
+                                            </span>
+                                        ) : latestDay ? (
+                                            <span className="mb-1 text-xs font-semibold text-slate-400">— {lastWeekLabel}</span>
+                                        ) : null}
                                     </div>
                                     {chartData.length === 0 && (
                                         <p className="mb-2 text-xs text-slate-400">{loading ? "Loading Shopify analytics…" : "No conversion data available for this period."}</p>
                                     )}
                                     <div className="h-64 w-full">
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={chartData}>
-                                                <defs>
-                                                    <linearGradient id="cvrGradient" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.25} />
-                                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                                                    </linearGradient>
-                                                </defs>
+                                            <ComposedChart data={chartData}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
-                                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                                                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} unit="%" />
-                                                <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
-                                                <Area type="monotone" dataKey="cvr" stroke="#3b82f6" strokeWidth={3} fill="url(#cvrGradient)" />
+                                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                                <YAxis yAxisId="cvr" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} unit="%" />
+                                                <YAxis yAxisId="sessions" orientation="right" axisLine={false} tickLine={false} tick={{ fill: "#cbd5e1", fontSize: 11 }} />
+                                                <Tooltip
+                                                    contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }}
+                                                    formatter={(value, name) =>
+                                                        name === "sessions"
+                                                            ? [Number(value).toLocaleString(), "Sessions"]
+                                                            : [`${value}%`, name === "cvr" ? "Conversion rate" : "Previous period"]
+                                                    }
+                                                />
+                                                <Bar yAxisId="sessions" dataKey="sessions" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
+                                                <Line yAxisId="cvr" type="linear" dataKey="previousCvr" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} />
+                                                <Line yAxisId="cvr" type="linear" dataKey="cvr" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
                                                 {chartMarkers.map((m) => (
                                                     <ReferenceLine
                                                         key={m.id}
+                                                        yAxisId="cvr"
                                                         x={m.label}
                                                         stroke="#f59e0b"
                                                         strokeDasharray="4 3"
                                                         label={{ value: "●", position: "top", fill: "#f59e0b", fontSize: 10 }}
                                                     />
                                                 ))}
-                                            </AreaChart>
+                                            </ComposedChart>
                                         </ResponsiveContainer>
                                     </div>
+                                    <p className="mt-2 text-xs text-slate-400">Solid line with dots: last {periodDays} days · dashed: the {periodDays} days before</p>
                                     {chartMarkers.length > 0 && (
                                         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                                             {chartMarkers.map((m) => (
@@ -812,19 +872,24 @@ function Dashboard() {
                                         <Bell className="text-blue-500" size={21} />
                                     </div>
                                     <div className="mt-7 space-y-5">
-                                        {alarms.map((alarm) => {
-                                            const Icon = alarm.icon;
+                                        {alarmRules.length === 0 && (
+                                            <p className="text-xs text-slate-400">{loading ? "Loading…" : "No alarm rules set up yet."}</p>
+                                        )}
+                                        {alarmRules.map((rule) => {
+                                            const kind = ruleKind(rule);
+                                            const Icon = kind === "quilt" ? ShoppingBag : kind === "cvr" ? TrendingUp : Bell;
+                                            const live = kind === "quilt" ? alarmLive[1] : kind === "cvr" ? alarmLive[2] : undefined;
                                             return (
-                                                <div key={alarm.id} className="flex items-start gap-3">
+                                                <div key={rule.id} className="flex items-start gap-3">
                                                     <div className="rounded-xl bg-blue-50 p-2.5 text-blue-600"><Icon size={20} /></div>
                                                     <div className="min-w-0 flex-1">
-                                                        <p className="text-sm font-semibold text-slate-800">{alarm.title}</p>
-                                                        <p className="mt-1 text-xs text-slate-400">{alarm.condition}</p>
-                                                        {summary && (
-                                                            <p className={`mt-1 text-xs ${alarmLive[alarm.id]?.alert ? "font-semibold text-red-600" : "text-slate-500"}`}>{alarmLive[alarm.id]?.text}</p>
+                                                        <p className="text-sm font-semibold text-slate-800">{rule.title}</p>
+                                                        {rule.description && <p className="mt-1 text-xs text-slate-400">{rule.description}</p>}
+                                                        {summary && rule.is_active && live && (
+                                                            <p className={`mt-1 text-xs ${live.alert ? "font-semibold text-red-600" : "text-slate-500"}`}>{live.text}</p>
                                                         )}
-                                                        <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${alarm.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                                                            {alarm.enabled ? "Enabled" : "Paused"}
+                                                        <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${rule.is_active ? (live?.alert ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700") : "bg-slate-100 text-slate-500"}`}>
+                                                            {rule.is_active ? (live?.alert ? "Alert" : "Enabled") : "Paused"}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -948,49 +1013,6 @@ function Dashboard() {
                                 <p className="mt-4 text-xs text-slate-400">
                                     A rising refund or cancellation rate is often an early sign of checkout friction, payment issues, or a stock/fulfillment problem.
                                 </p>
-                            </section>
-
-                            <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-                                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                                    <div>
-                                        <h3 className="font-bold text-slate-900">Automation Rules</h3>
-                                        <p className="mt-1 text-xs text-slate-400">Control your store monitoring conditions</p>
-                                    </div>
-                                    <span className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">{alarms.filter(a => a.enabled).length} Active</span>
-                                </div>
-                                <div className="grid gap-4 lg:grid-cols-2">
-                                    {alarms.map((alarm) => {
-                                        const Icon = alarm.icon;
-                                        return (
-                                            <div key={alarm.id} className="rounded-xl border border-slate-200 p-5 transition hover:border-blue-200 hover:shadow-sm">
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="rounded-xl bg-blue-50 p-3 text-blue-600"><Icon size={21} /></div>
-                                                        <div>
-                                                            <h4 className="text-sm font-bold text-slate-900">{alarm.title}</h4>
-                                                            <p className="mt-1 text-xs text-slate-400">Rule #{alarm.id.toString().padStart(2, "0")}</p>
-                                                        </div>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => toggleAlarm(alarm.id)}
-                                                        aria-label={`Toggle ${alarm.title}`}
-                                                        className={`relative h-6 w-11 shrink-0 rounded-full transition ${alarm.enabled ? "bg-blue-600" : "bg-slate-300"}`}
-                                                    >
-                                                        <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-all ${alarm.enabled ? "left-6" : "left-1"}`} />
-                                                    </button>
-                                                </div>
-                                                <p className="mt-5 text-sm leading-relaxed text-slate-500">{alarm.description}</p>
-                                                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-                                                    <span className="flex items-center gap-2 text-xs text-slate-400"><Clock3 size={14} /> {alarm.condition}</span>
-                                                    <span className={`flex items-center gap-1.5 text-xs font-semibold ${alarm.enabled ? "text-emerald-600" : "text-slate-400"}`}>
-                                                        <span className={`h-2 w-2 rounded-full ${alarm.enabled ? "bg-emerald-500" : "bg-slate-400"}`} />
-                                                        {alarm.enabled ? (alarmLive[alarm.id]?.alert ? "Alert" : "Monitoring") : "Paused"}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
                             </section>
 
                             <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
