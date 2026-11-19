@@ -23,6 +23,8 @@ Data sources:
     groups are reported as unavailable - never estimated.
 """
 
+import logging
+import time
 from datetime import datetime, timedelta
 
 from sqlalchemy import func
@@ -30,6 +32,21 @@ from sqlalchemy.orm import Session
 
 import models
 from overview import _day_bounds_utc, _tz
+from shopify_client import graphql
+
+logger = logging.getLogger("product_groups")
+
+SHOPIFYQL = """
+query Q($q: String!) {
+  shopifyqlQuery(query: $q) {
+    tableData { columns { name dataType } rows }
+    parseErrors
+  }
+}
+"""
+CACHE_SECONDS = 600
+_cache: dict = {}
+SALES_METRICS = ["net_items_sold", "gross_sales", "discounts", "sales_reversals", "net_sales", "total_sales"]
 
 PRIOR_VIEWS = 200  # the "200" in the checklist's small-sample adjustment
 
@@ -76,6 +93,105 @@ def fetch_product_views(store: models.Store, days: int) -> dict[str, dict] | Non
     page honest (view-based columns show as unavailable).
     """
     return None
+
+
+def _num(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _shopify_daily_sales(store: models.Store, days_back: int) -> dict[str, dict[str, dict]] | None:
+    """
+    {date: {product_title: {net_items_sold, gross_sales, discounts, sales_reversals,
+    net_sales, total_sales, orders?}}} straight from Shopify Analytics - the same
+    numbers as Shopify's own "Total sales by product" report. None if Shopify
+    refuses the query (the page then falls back to our synced orders).
+    """
+    key = (store.store_url, days_back)
+    cached = _cache.get(key)
+    if cached and cached[0] > time.time():
+        return cached[1]
+
+    result = None
+    # Try the richest query first; drop parts Shopify rejects. Rows without a
+    # product title (e.g. custom items) are skipped below either way.
+    variants = [
+        (SALES_METRICS + ["orders"], "WHERE product_title IS NOT NULL "),
+        (SALES_METRICS, "WHERE product_title IS NOT NULL "),
+        (SALES_METRICS, ""),
+    ]
+    for metrics, where in variants:
+        q = (
+            f"FROM sales SHOW {', '.join(metrics)} {where}"
+            f"GROUP BY product_title TIMESERIES day SINCE -{days_back}d UNTIL today"
+        )
+        try:
+            data = graphql(store.store_url, SHOPIFYQL, {"q": q})["shopifyqlQuery"]
+        except Exception:
+            logger.exception("Shopify sales-by-product query failed")
+            break
+        if data.get("parseErrors"):
+            logger.warning("ShopifyQL sales-by-product parse errors: %s", data["parseErrors"])
+            continue
+        result = {}
+        for row in (data.get("tableData") or {}).get("rows") or []:
+            day = str(row.get("day", ""))[:10]
+            title = row.get("product_title")
+            if not day or not title:
+                continue
+            entry = result.setdefault(day, {}).setdefault(str(title), {m: 0.0 for m in metrics})
+            for m in metrics:
+                entry[m] += _num(row.get(m))
+        break
+
+    _cache[key] = (time.time() + CACHE_SECONDS, result)
+    return result
+
+
+def _sum_shopify(daily: dict, first_day, last_day) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    d = first_day
+    while d <= last_day:
+        for title, vals in (daily.get(d.isoformat()) or {}).items():
+            acc = out.setdefault(title, {})
+            for k, v in vals.items():
+                acc[k] = acc.get(k, 0.0) + v
+        d += timedelta(days=1)
+    return out
+
+
+def _merge_shopify_sales(db: Session, store: models.Store, db_rows: list[dict], shop: dict[str, dict]) -> list[dict]:
+    """Shopify's per-product sales numbers, joined to our products by title."""
+    by_title = {r["name"]: r for r in db_rows}
+    known = {
+        p.product_name: p
+        for p in db.query(models.Product).filter(models.Product.store_id == store.id, models.Product.product_name.in_(list(shop)))
+    } if shop else {}
+    out = []
+    for i, (title, v) in enumerate(shop.items()):
+        base = by_title.get(title)
+        prod = known.get(title)
+        qty = int(round(v.get("net_items_sold", 0)))
+        net = round(v.get("net_sales", 0.0), 2)
+        out.append({
+            "product_id": base["product_id"] if base else (prod.id if prod else -(i + 1)),
+            "shopify_product_id": base["shopify_product_id"] if base else (prod.shopify_product_id if prod else None),
+            "name": title,
+            "category": base["category"] if base else product_category(title, prod.category if prod else None),
+            # Orders that include the product: Shopify's count when it gives one, else ours.
+            "orders": int(round(v["orders"])) if "orders" in v else (base["orders"] if base else 0),
+            "quantity": qty,
+            "gross_sales": round(v.get("gross_sales", 0.0), 2),
+            "discounts": round(v.get("discounts", 0.0), 2),
+            "sales_reversals": round(v.get("sales_reversals", 0.0), 2),
+            "net_sales": net,
+            "total_sales": round(v.get("total_sales", 0.0), 2),
+            "revenue": net,
+            "price": round(net / qty, 2) if qty > 0 else None,
+        })
+    return out
 
 
 def _sales_by_product(db: Session, store: models.Store, start, end) -> list[dict]:
@@ -193,7 +309,19 @@ def fetch_product_analytics(db: Session, store: models.Store, days: int = 28) ->
     p_first, p_last, p_start, p_end = _window(store, days, end_days_ago=days)
 
     products = _sales_by_product(db, store, start, end)
-    prior = {p["product_id"]: p for p in _sales_by_product(db, store, p_start, p_end)}
+    prior_rows = _sales_by_product(db, store, p_start, p_end)
+
+    # Prefer Shopify's own per-product sales so numbers match Shopify's
+    # "Total sales by product" report exactly (net sales, net items sold).
+    daily = _shopify_daily_sales(store, days_back=days * 2 + 3)
+    sales_source = "orders_db"
+    if daily is not None:
+        cur = _sum_shopify(daily, first_day, last_day)
+        if cur:
+            products = _merge_shopify_sales(db, store, products, cur)
+            prior_rows = _merge_shopify_sales(db, store, prior_rows, _sum_shopify(daily, p_first, p_last))
+            sales_source = "shopify"
+    prior = {p["name"]: p for p in prior_rows}
 
     views = fetch_product_views(store, days)
     views_available = views is not None
@@ -214,7 +342,7 @@ def fetch_product_analytics(db: Session, store: models.Store, days: int = 28) ->
                 })
 
     for p in products:
-        prev = prior.get(p["product_id"])
+        prev = prior.get(p["name"])
         p["prior_revenue"] = prev["revenue"] if prev else 0.0
         p["revenue_change_pct"] = (
             round((p["revenue"] - prev["revenue"]) / prev["revenue"] * 100, 1) if prev and prev["revenue"] else None
@@ -257,6 +385,14 @@ def fetch_product_analytics(db: Session, store: models.Store, days: int = 28) ->
         "days": days,
         "window_label": f"{first_day.strftime('%d %b')} - {last_day.strftime('%d %b')} (last {days} complete days)",
         "prior_window_label": f"{p_first.strftime('%d %b')} - {p_last.strftime('%d %b')}",
+        "sales_source": sales_source,
+        "sales_note": (
+            "Net sales = gross sales − discounts − sales reversals (refunds), per product, from Shopify Analytics - "
+            "same as Shopify's \"Total sales by product\" report."
+            if sales_source == "shopify" else
+            "Revenue = product price × quantity from synced orders (before order discounts, refunds, shipping and tax). "
+            "Shopify's per-product sales report couldn't be reached, so these may differ slightly from Shopify."
+        ),
         "views_available": views_available,
         "views_note": None if views_available else (
             "Product views and add-to-cart by product aren't connected yet, so the four groups and the "

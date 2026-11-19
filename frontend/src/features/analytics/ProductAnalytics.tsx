@@ -86,6 +86,10 @@ function ProductAnalytics() {
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
+      {data?.sales_note && (
+        <p className="text-xs text-slate-500">{data.sales_note}</p>
+      )}
+
       {data?.views_note && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           <Info size={15} className="mt-0.5 shrink-0" />
@@ -177,7 +181,7 @@ function ProductAnalytics() {
                   <th className="py-2 pr-4 font-medium">Category</th>
                   <th className="py-2 pr-4 text-right font-medium">Products sold</th>
                   <th className="py-2 pr-4 text-right font-medium">Orders</th>
-                  <th className="py-2 pr-4 text-right font-medium">Revenue</th>
+                  <th className="py-2 pr-4 text-right font-medium">{data?.sales_source === "shopify" ? "Net sales" : "Revenue"}</th>
                   <th className="py-2 text-right font-medium">vs prior 28 days</th>
                 </tr>
               </thead>
@@ -186,7 +190,7 @@ function ProductAnalytics() {
                   <tr key={c.category} className="border-b border-slate-50 last:border-0">
                     <td className="py-2.5 pr-4 font-medium text-slate-800">{c.category}</td>
                     <td className="py-2.5 pr-4 text-right text-slate-600">{c.products}</td>
-                    <td className="py-2.5 pr-4 text-right text-slate-600">{c.orders}</td>
+                    <td className="py-2.5 pr-4 text-right text-slate-600">{c.orders || "—"}</td>
                     <td className="py-2.5 pr-4 text-right font-semibold text-slate-900">{formatMoney(c.revenue, currency)}</td>
                     <td className="py-2.5 text-right">{changeText(c.revenue_change_pct)}</td>
                   </tr>
@@ -250,8 +254,9 @@ function ProductAnalytics() {
                       <th className="pb-3 pr-4 text-right font-medium">Revenue / view</th>
                     </>
                   )}
+                  <th className="pb-3 pr-4 text-right font-medium">Items sold</th>
                   <th className="pb-3 pr-4 text-right font-medium">Orders</th>
-                  <th className="pb-3 pr-4 text-right font-medium">Revenue</th>
+                  <th className="pb-3 pr-4 text-right font-medium">{data?.sales_source === "shopify" ? "Net sales" : "Revenue"}</th>
                   <th className="pb-3 pr-4 text-right font-medium">vs prior 28 days</th>
                   {viewsOn && <th className="pb-3 text-right font-medium">Group</th>}
                 </tr>
@@ -275,7 +280,8 @@ function ProductAnalytics() {
                         </td>
                       </>
                     )}
-                    <td className="py-3 pr-4 text-right text-slate-700">{p.orders}</td>
+                    <td className="py-3 pr-4 text-right text-slate-700">{p.quantity}</td>
+                    <td className="py-3 pr-4 text-right text-slate-700">{p.orders || "—"}</td>
                     <td className="py-3 pr-4 text-right font-semibold text-slate-900">{formatMoney(p.revenue, currency)}</td>
                     <td className="py-3 pr-4 text-right">{changeText(p.revenue_change_pct)}</td>
                     {viewsOn && (

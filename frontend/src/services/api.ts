@@ -127,6 +127,9 @@ export type ProductRow = {
   vs_category_pts?: number;
   group?: ProductGroup;
   revenue_left_on_table?: number;
+  gross_sales?: number;
+  discounts?: number;
+  net_sales?: number;
 };
 
 export type CategoryRow = {
@@ -142,6 +145,8 @@ export type ProductAnalyticsData = {
   days: number;
   window_label: string;
   prior_window_label: string;
+  sales_source: "shopify" | "orders_db";
+  sales_note: string;
   views_available: boolean;
   views_note: string | null;
   products: ProductRow[];
