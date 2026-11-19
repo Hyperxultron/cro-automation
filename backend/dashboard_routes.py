@@ -28,6 +28,7 @@ from quilt_alarm import check_quilt_alarm, RULE_TITLE as QUILT_RULE_TITLE
 from recommendations import build_recommendations
 from benchmarks import get_benchmarks
 from order_health import fetch_order_health
+from overview import fetch_overview
 from shopify_sync import sync_store
 
 logger = logging.getLogger("dashboard")
@@ -495,3 +496,21 @@ def order_health(
 ):
     store = _get_store(db, shop)
     return fetch_order_health(db, store, days=days)
+
+
+# ---------------------------------------------------------------------------
+# Overview v2 - trustworthy numbers (manager checklist, section 1 fix-first +
+# section 2 period controls). Default period is "yesterday" (a complete day);
+# comparison is same-weekday, not the day before; low-traffic periods say
+# "too early to compare" instead of printing a noisy %.
+# ---------------------------------------------------------------------------
+
+@router.get("/overview")
+def overview(
+    period: str = Query("yesterday", pattern="^(yesterday|today|last7)$"),
+    compare: str = Query("4week_avg", pattern="^(4week_avg|last_week)$"),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    return fetch_overview(db, store, period=period, compare=compare)

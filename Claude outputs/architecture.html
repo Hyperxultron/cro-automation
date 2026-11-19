@@ -1,0 +1,37 @@
+<section id="architecture" class="dark col" data-transition="fade">
+  <p class="kicker">Section 2 — What we built</p>
+  <h2 style="margin-top:20px; color:var(--ink-light);">Architecture: how it's wired together</h2>
+  <div class="row" style="margin-top:84px; align-items:center; gap:0;">
+    <div class="card col" style="flex:1; align-items:center; text-align:center; gap:10px;">
+      <h3>Shopify Store</h3>
+      <p class="small" style="font-size:21px;">Ridhi Block Print — orders, products, sessions &amp; checkout data</p>
+    </div>
+    <div class="col" style="width:90px; align-items:center; justify-content:center;"><span style="font-size:40px; color:var(--muted-light);">&#8594;</span></div>
+    <div class="card col" style="flex:1; align-items:center; text-align:center; gap:10px;">
+      <h3>FastAPI Backend</h3>
+      <p class="small" style="font-size:21px;">Syncs orders every 15 min, runs alarm checks, computes recommendations</p>
+    </div>
+    <div class="col" style="width:90px; align-items:center; justify-content:center;"><span style="font-size:40px; color:var(--muted-light);">&#8594;</span></div>
+    <div class="card col" style="flex:1; align-items:center; text-align:center; gap:10px;">
+      <h3>PostgreSQL</h3>
+      <p class="small" style="font-size:21px;">Stores synced orders, products, alarm history — source of truth</p>
+    </div>
+    <div class="col" style="width:90px; align-items:center; justify-content:center;"><span style="font-size:40px; color:var(--muted-light);">&#8594;</span></div>
+    <div class="card col" style="flex:1; align-items:center; text-align:center; gap:10px;">
+      <h3>React Dashboard</h3>
+      <p class="small" style="font-size:21px;">What we see day to day — auto-refreshes every 5 minutes</p>
+    </div>
+  </div>
+  <div class="row gap-med" style="margin-top:80px;">
+    <p class="pill pill-blue">FastAPI + Python</p>
+    <p class="pill pill-emerald">PostgreSQL</p>
+    <p class="pill pill-violet">React + TypeScript + Vite</p>
+    <p class="pill pill-amber">Hosted live on Render</p>
+    <p class="pill" style="background:#1e293b; color:#cbd5e1;">Shopify Admin + ShopifyQL APIs</p>
+  </div>
+  <div class="footer">
+    <span>Shopify CRO Automation</span>
+    <span>5</span>
+  </div>
+  <aside>This is a real, deployed system — not a mockup. Both the backend and frontend are live on Render and pull from our actual Shopify store.</aside>
+</section>

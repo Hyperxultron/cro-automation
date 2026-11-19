@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
     api, formatMoney, timeAgo,
-    type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type OrdersTrendDay, type TopProduct
+    type CvrDay, type DashboardSummary, type Funnel, type OrderHealth, type Overview, type OrdersTrendDay, type TopProduct
 } from "../../services/api";
 import AlarmRules from "../alarms/AlarmRules";
 import AlertHistory from "../alarms/AlertHistory";
@@ -14,8 +14,8 @@ import ProductAnalytics from "../analytics/ProductAnalytics";
 import CartCheckoutAnalytics from "../analytics/CartCheckoutAnalytics";
 import ComingSoon from "../misc/ComingSoon";
 import {
-    Activity, ArrowUpRight,
-    Bell, CheckCircle2, Clock3, FileText, Filter, Globe, IndianRupee, LayoutDashboard,
+    Activity, ArrowDownRight, ArrowUpRight,
+    Bell, CheckCircle2, Clock3, DollarSign, FileText, Filter, Gauge, Globe, IndianRupee, LayoutDashboard,
     Lightbulb, Mail, Menu, Package, RefreshCw, Settings, ShieldCheck,
     ShoppingBag, ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
@@ -33,6 +33,15 @@ const formatDay = (iso: string, long: boolean) => {
 
 const pct = (value: number | null | undefined) =>
     value === null || value === undefined ? "—" : `${value > 0 ? "+" : ""}${value}%`;
+
+// "Show change both ways everywhere, e.g. +0.34 pts (+16%)" (checklist section 1, P2).
+// absUnit lets us label the absolute delta (pts, orders, ₹, etc.) distinctly from the %.
+const changeBothWays = (absValue: number | null, pctValue: number | null, absUnit = "") => {
+    if (absValue === null || pctValue === null) return "—";
+    const absStr = `${absValue > 0 ? "+" : ""}${absValue}${absUnit}`;
+    const pctStr = `${pctValue > 0 ? "+" : ""}${pctValue}%`;
+    return `${absStr} (${pctStr})`;
+};
 
 const initialAlarms = [
     {
@@ -61,6 +70,13 @@ function Dashboard() {
     const [mobileMenu, setMobileMenu] = useState(false);
     const [period, setPeriod] = useState("Last 7 days");
 
+    // "Period controls: Yesterday / Last 7 vs prior 7 / Today so far, plus a
+    // comparison picker" (checklist section 2, P1). Defaults to "yesterday" -
+    // a complete day - not "today", per section 1's first fix-first item.
+    const [overviewPeriod, setOverviewPeriod] = useState<"yesterday" | "today" | "last7">("yesterday");
+    const [overviewCompare, setOverviewCompare] = useState<"4week_avg" | "last_week">("4week_avg");
+    const [overview, setOverview] = useState<Overview | null>(null);
+
     // ---- Real data from backend ----
     const [summary, setSummary] = useState<DashboardSummary | null>(null);
     const [trend, setTrend] = useState<CvrDay[]>([]);
@@ -77,13 +93,14 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t, tp, ot, f, oh] = await Promise.all([
+            const [s, t, tp, ot, f, oh, ov] = await Promise.all([
                 api.summary(),
                 api.cvrTrend(periodDays).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
                 api.topProducts(1, 5).catch(() => ({ days: 1, products: [] as TopProduct[] })),
                 api.ordersTrend(7).catch(() => ({ days: 7, trend: [] as OrdersTrendDay[] })),
                 api.funnel().catch(() => null),
                 api.orderHealth(30).catch(() => null),
+                api.overview(overviewPeriod, overviewCompare).catch(() => null),
             ]);
             setSummary(s);
             setTrend(t.days);
@@ -91,12 +108,13 @@ function Dashboard() {
             setOrdersTrend(ot.trend);
             setFunnel(f);
             setOrderHealth(oh);
+            setOverview(ov);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unable to load dashboard data");
         } finally {
             setLoading(false);
         }
-    }, [periodDays]);
+    }, [periodDays, overviewPeriod, overviewCompare]);
 
     useEffect(() => {
         loadData();
@@ -410,11 +428,77 @@ function Dashboard() {
                                 <div>
                                     <p className="text-sm text-slate-500">Welcome to your monitoring workspace</p>
                                     <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">CRO Performance Overview</h1>
-                                    <p className="mt-2 text-sm text-slate-500">Monitor your store performance and automated alerts.</p>
+                                    <p className="mt-2 text-sm text-slate-500">
+                                        Monitor your store performance and automated alerts.
+                                        {summary?.store.timezone && (
+                                            <span className="ml-2 inline-flex items-center gap-1 text-slate-400">
+                                                <Clock3 size={12} /> Store time: {summary.store.timezone}
+                                            </span>
+                                        )}
+                                    </p>
                                 </div>
                                 <button onClick={refreshNow} disabled={syncing} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-slate-50 disabled:opacity-60">
                                     <RefreshCw size={16} className={syncing ? "animate-spin" : ""} /> {syncing ? "Syncing Shopify…" : "Refresh Dashboard"}
                                 </button>
+                            </div>
+
+                            {/* Period controls + comparison picker (checklist section 2, P1).
+                                Yesterday (a complete day) is the default; Today is an explicit toggle. */}
+                            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
+                                <span className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Period</span>
+                                <div className="flex rounded-xl bg-slate-100 p-1">
+                                    {([
+                                        { key: "yesterday", label: "Yesterday" },
+                                        { key: "last7", label: "Last 7 vs prior 7" },
+                                        { key: "today", label: "Today so far" },
+                                    ] as const).map((opt) => (
+                                        <button
+                                            key={opt.key}
+                                            onClick={() => setOverviewPeriod(opt.key)}
+                                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${overviewPeriod === opt.key ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                {overviewPeriod !== "last7" && (
+                                    <>
+                                        <span className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Compare to</span>
+                                        <select
+                                            value={overviewCompare}
+                                            onChange={(e) => setOverviewCompare(e.target.value as "4week_avg" | "last_week")}
+                                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none"
+                                        >
+                                            <option value="4week_avg">4-week same-weekday average</option>
+                                            <option value="last_week">Same weekday last week</option>
+                                        </select>
+                                    </>
+                                )}
+                                {overview && (
+                                    <span className="ml-auto text-xs font-medium text-slate-500">{overview.period_label}</span>
+                                )}
+                            </div>
+
+                            {/* Health strip: time of last order + mobile page speed (checklist section 2, P1). */}
+                            <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+                                <div className="flex items-center gap-2">
+                                    <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600"><Clock3 size={16} /></div>
+                                    <div>
+                                        <p className="text-xs text-slate-400">Last order</p>
+                                        <p className="text-sm font-semibold text-slate-800">
+                                            {overview?.health.last_order_at ? timeAgo(overview.health.last_order_at) : loading ? "Loading…" : "No orders yet"}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="rounded-lg bg-slate-100 p-2 text-slate-400"><Gauge size={16} /></div>
+                                    <div>
+                                        <p className="text-xs text-slate-400">Mobile page speed</p>
+                                        <p className="text-sm font-semibold text-slate-400">
+                                            Not available yet <span className="font-normal text-slate-400">(Core Web Vitals not wired up)</span>
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
 
                             {error && (
@@ -430,44 +514,77 @@ function Dashboard() {
                             )}
 
                             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                                {[
-                                    {
-                                        label: "Revenue Today",
-                                        value: loading ? "…" : summary ? formatMoney(summary.today.revenue, currency) : "—",
-                                        change: `${pct(summary?.changes.orders_pct)} vs same time yday`,
-                                        icon: IndianRupee, color: "rose",
-                                        note: summary ? `AOV ${formatMoney(summary.today.aov, currency)} · Yesterday ${formatMoney(summary.yesterday.revenue, currency)}` : "Loading…",
-                                    },
-                                    {
-                                        label: "Quilt Orders Today",
-                                        value: loading ? "…" : String(summary?.today.quilt_orders ?? "—"),
-                                        change: `${pct(summary?.changes.quilt_orders_pct)} vs same time yday`,
-                                        icon: ShoppingBag, color: "blue",
-                                        note: summary ? `Yesterday: ${summary.yesterday.quilt_orders} quilt orders (store time)` : "Loading…",
-                                    },
-                                    {
-                                        label: "Conversion Rate",
-                                        value: loading ? "…" : cvr?.yesterday_cvr != null ? `${cvr.yesterday_cvr}%` : "—",
-                                        change: cvrDiff === null ? "—" : `${cvrDiff > 0 ? "+" : ""}${cvrDiff} pts`,
-                                        icon: TrendingUp, color: "violet",
-                                        note: cvr ? `Yesterday (${cvr.yesterday_date}) vs ${cvr.previous_cvr ?? "—"}% day before` : summary?.cvr_error ? "Shopify analytics unavailable" : "Loading…",
-                                    },
-                                    {
-                                        label: "Orders Today",
-                                        value: loading ? "…" : String(summary?.today.orders ?? "—"),
-                                        change: `${pct(summary?.changes.orders_pct)} vs same time yday`,
-                                        icon: Activity, color: "emerald",
-                                        note: summary ? `Yesterday ${summary.yesterday.orders} orders / ${formatMoney(summary.yesterday.revenue, currency)}` : "Loading…",
-                                    },
-                                    {
-                                        label: "Open Alerts",
-                                        value: loading ? "…" : String(summary?.open_alerts ?? 0),
-                                        change: `${summary?.active_rules ?? 0} rules active`,
-                                        icon: Bell, color: "amber",
-                                        note: "Email delivery setup pending",
-                                    },
-                                ].map((item) => {
-                                    const Icon = item.icon;
+                                {(() => {
+                                    const revenueMetric = overview?.metrics.revenue;
+                                    const ordersMetric = overview?.metrics.orders;
+                                    const aovMetric = overview?.metrics.aov;
+                                    const cvrMetric = overview?.metrics.conversion_rate;
+                                    const periodLabel = overview?.period_label ?? "Loading…";
+                                    const MoneyIcon = currency === "INR" ? IndianRupee : DollarSign;
+
+                                    // "Colour by good or bad, not up or down" - for these four metrics more
+                                    // is always better, so up=good(green)/down=bad(red); "—" when we can't
+                                    // say yet (too early to compare, or no baseline).
+                                    const changeTone = (changePct: number | null | undefined, tooEarly: boolean | undefined) => {
+                                        if (tooEarly || changePct === null || changePct === undefined) return "slate";
+                                        return changePct >= 0 ? "emerald" : "red";
+                                    };
+
+                                    const renderChange = (m: typeof revenueMetric, absUnit: string) => {
+                                        if (!m) return { text: loading ? "Loading…" : "—", tone: "slate", showArrow: false };
+                                        if (m.too_early) return { text: "Too early to compare", tone: "slate", showArrow: false };
+                                        const text = changeBothWays(m.change_abs, m.change_pct, absUnit);
+                                        const tone = changeTone(m.change_pct, m.too_early);
+                                        return { text, tone, showArrow: m.change_pct !== null && m.change_pct !== 0 };
+                                    };
+
+                                    const cards = [
+                                        {
+                                            label: "Revenue",
+                                            period: periodLabel,
+                                            value: loading ? "…" : revenueMetric?.value != null ? formatMoney(revenueMetric.value, currency) : "—",
+                                            icon: MoneyIcon, color: "rose",
+                                            change: renderChange(revenueMetric, ""),
+                                            note: aovMetric?.value != null ? `AOV ${formatMoney(aovMetric.value, currency)} · vs ${formatMoney(aovMetric.baseline_value ?? 0, currency)} baseline` : "Loading…",
+                                        },
+                                        {
+                                            label: "Quilt Orders Today",
+                                            period: "Today",
+                                            value: loading ? "…" : String(summary?.today.quilt_orders ?? "—"),
+                                            change: {
+                                                text: summary?.changes.quilt_orders_pct == null ? "—" : `${pct(summary.changes.quilt_orders_pct)} vs same time yday`,
+                                                tone: (summary?.changes.quilt_orders_pct ?? 0) >= 0 ? "emerald" : "red",
+                                                showArrow: summary?.changes.quilt_orders_pct != null,
+                                            },
+                                            icon: ShoppingBag, color: "blue",
+                                            note: summary ? `Yesterday: ${summary.yesterday.quilt_orders} quilt orders (store time)` : "Loading…",
+                                        },
+                                        {
+                                            label: "Conversion Rate",
+                                            period: periodLabel,
+                                            value: loading ? "…" : cvrMetric?.value != null ? `${cvrMetric.value}%` : "—",
+                                            icon: TrendingUp, color: "violet",
+                                            change: renderChange(cvrMetric, " pts"),
+                                            note: cvrMetric?.base_label ?? (overview?.cvr_error ? "Shopify analytics unavailable" : "Loading…"),
+                                        },
+                                        {
+                                            label: "Orders",
+                                            period: periodLabel,
+                                            value: loading ? "…" : ordersMetric?.value != null ? String(ordersMetric.value) : "—",
+                                            icon: Activity, color: "emerald",
+                                            change: renderChange(ordersMetric, ""),
+                                            note: ordersMetric ? `${ordersMetric.baseline_label}: ${ordersMetric.baseline_value}` : "Loading…",
+                                        },
+                                        {
+                                            label: "Open Alerts",
+                                            period: "Now",
+                                            value: loading ? "…" : String(summary?.open_alerts ?? 0),
+                                            change: { text: `${summary?.active_rules ?? 0} rules active`, tone: "slate", showArrow: false },
+                                            icon: Bell, color: "amber",
+                                            note: "Email delivery setup pending",
+                                        },
+                                    ];
+
                                     const colors: Record<string, string> = {
                                         blue: "bg-blue-50 text-blue-600",
                                         violet: "bg-violet-50 text-violet-600",
@@ -475,22 +592,36 @@ function Dashboard() {
                                         amber: "bg-amber-50 text-amber-600",
                                         rose: "bg-rose-50 text-rose-600",
                                     };
-                                    return (
-                                        <div key={item.label} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-                                            <div className="flex items-center justify-between">
-                                                <p className="text-sm font-medium text-slate-500">{item.label}</p>
-                                                <div className={`rounded-xl p-2.5 ${colors[item.color]}`}><Icon size={20} /></div>
+                                    const toneText: Record<string, string> = {
+                                        emerald: "text-emerald-600",
+                                        red: "text-red-600",
+                                        slate: "text-slate-400",
+                                    };
+
+                                    return cards.map((item) => {
+                                        const Icon = item.icon;
+                                        const isDown = item.change.tone === "red";
+                                        return (
+                                            <div key={item.label} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <p className="text-sm font-medium text-slate-500">{item.label}</p>
+                                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.period}</p>
+                                                    </div>
+                                                    <div className={`rounded-xl p-2.5 ${colors[item.color]}`}><Icon size={20} /></div>
+                                                </div>
+                                                <div className="mt-4 flex items-end justify-between">
+                                                    <h3 className="text-3xl font-bold tracking-tight text-slate-900">{item.value}</h3>
+                                                    <span className={`mb-1 flex items-center gap-1 text-xs font-semibold ${toneText[item.change.tone] ?? "text-slate-400"}`}>
+                                                        {item.change.showArrow && (isDown ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />)}
+                                                        {item.change.text}
+                                                    </span>
+                                                </div>
+                                                <p className="mt-2 text-xs text-slate-400">{item.note}</p>
                                             </div>
-                                            <div className="mt-4 flex items-end justify-between">
-                                                <h3 className="text-3xl font-bold tracking-tight text-slate-900">{item.value}</h3>
-                                                <span className="mb-1 flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                                                    <ArrowUpRight size={14} /> {item.change}
-                                                </span>
-                                            </div>
-                                            <p className="mt-2 text-xs text-slate-400">{item.note}</p>
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    });
+                                })()}
                             </div>
 
                             <div className="grid gap-6 xl:grid-cols-3">

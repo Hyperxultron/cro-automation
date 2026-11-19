@@ -1,0 +1,18 @@
+<section id="data_freshness" class="col" data-transition="fade">
+  <p class="kicker">Section 4 — Important to know</p>
+  <h2 style="margin-top:20px;">Which number uses which time window</h2>
+  <p class="small" style="font-size:22px; margin-top:20px; max-width:1600px;">Every card and chart already shows its own date range on screen — but here's the full picture in one place, since different metrics need different windows by nature.</p>
+  <table style="margin-top:40px;">
+    <tr><th>Metric</th><th>Time window</th><th>Why</th></tr>
+    <tr><td>Revenue Today, AOV, Orders Today</td><td>Today (store timezone)</td><td>Live snapshot of the current day</td></tr>
+    <tr><td>Conversion Funnel, Cart &amp; Checkout</td><td>Yesterday (full day)</td><td>Shopify's own session analytics has a 1-day delay — today's data is incomplete until the day closes</td></tr>
+    <tr><td>Conversion Rate Trend chart</td><td>Last 30 days</td><td>A trend needs a longer window to mean anything</td></tr>
+    <tr><td>Product Analytics</td><td>Selectable: Today / 7 / 30 days</td><td>Depends what question you're asking</td></tr>
+    <tr><td>Order Health, Recommendations (refund/cancel checks)</td><td>Last 30 days</td><td>Enough orders to avoid noisy, misleading percentages</td></tr>
+  </table>
+  <div class="footer">
+    <span>Shopify CRO Automation</span>
+    <span>12</span>
+  </div>
+  <aside>If asked "why is today's conversion rate not showing" — the honest answer is Shopify itself doesn't finalize session data until the day is over, so we show yesterday's complete, accurate number instead of a partial, misleading one.</aside>
+</section>

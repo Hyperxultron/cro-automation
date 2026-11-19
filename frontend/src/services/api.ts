@@ -125,6 +125,39 @@ export type Benchmarks = {
   conversion_rate: Benchmark;
 };
 
+export type OverviewMetric = {
+  value: number | null;
+  baseline_value: number | null;
+  baseline_label: string;
+  change_abs: number | null;
+  change_pct: number | null;
+  too_early: boolean;
+  sessions?: number | null;
+  base_label?: string;
+};
+
+export type Overview = {
+  period: "yesterday" | "today" | "last7";
+  period_label: string;
+  compare: "4week_avg" | "last_week";
+  is_partial: boolean;
+  timezone: string;
+  as_of: string;
+  metrics: {
+    orders: OverviewMetric;
+    revenue: OverviewMetric;
+    aov: OverviewMetric;
+    conversion_rate: OverviewMetric;
+  };
+  health: {
+    last_order_at: string | null;
+    mobile_page_speed: number | null;
+    mobile_page_speed_status: "not_available" | "ok";
+  };
+  cvr_error: string | null;
+  warnings: string[];
+};
+
 export type OrderHealth = {
   days: number;
   total_orders: number;
@@ -185,6 +218,8 @@ export const api = {
   recommendations: () => request<{ recommendations: Recommendation[] }>("/dashboard/recommendations"),
   benchmarks: () => request<Benchmarks>("/dashboard/benchmarks"),
   orderHealth: (days = 30) => request<OrderHealth>(`/dashboard/order-health?days=${days}`),
+  overview: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
+    request<Overview>(`/dashboard/overview?period=${period}&compare=${compare}`),
 };
 
 export function formatMoney(value: number, currency?: string | null) {
