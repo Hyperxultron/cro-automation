@@ -158,6 +158,26 @@ export type Overview = {
   warnings: string[];
 };
 
+export type SegmentRow = {
+  label: string;
+  sessions: number;
+  added_to_cart_rate: number | null;
+  conversion_rate: number | null;
+  orders: number;
+  baseline_sessions: number | null;
+  baseline_conversion_rate: number | null;
+  sessions_change_pct: number | null;
+  conversion_rate_change_pts: number | null;
+};
+
+export type SegmentSplit = {
+  dimension: "device" | "channel";
+  days: number;
+  rows: SegmentRow[];
+  revenue_available: boolean;
+  revenue_note: string;
+};
+
 export type OrderHealth = {
   days: number;
   total_orders: number;
@@ -220,6 +240,8 @@ export const api = {
   orderHealth: (days = 30) => request<OrderHealth>(`/dashboard/order-health?days=${days}`),
   overview: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
     request<Overview>(`/dashboard/overview?period=${period}&compare=${compare}`),
+  segments: (dimension: "device" | "channel", days = 7) =>
+    request<SegmentSplit>(`/dashboard/segments?dimension=${dimension}&days=${days}`),
 };
 
 export function formatMoney(value: number, currency?: string | null) {

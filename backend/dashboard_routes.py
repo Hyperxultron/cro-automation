@@ -29,6 +29,7 @@ from recommendations import build_recommendations
 from benchmarks import get_benchmarks
 from order_health import fetch_order_health
 from overview import fetch_overview
+from segments import fetch_segment_split
 from shopify_sync import sync_store
 
 logger = logging.getLogger("dashboard")
@@ -514,3 +515,23 @@ def overview(
 ):
     store = _get_store(db, shop)
     return fetch_overview(db, store, period=period, compare=compare)
+
+
+# ---------------------------------------------------------------------------
+# Device / channel split (manager checklist, section 3 P1). Same ShopifyQL
+# `sessions` schema as cvr.py/funnel.py, just GROUP BY device or referrer.
+# ---------------------------------------------------------------------------
+
+@router.get("/segments")
+def segments(
+    dimension: str = Query("device", pattern="^(device|channel)$"),
+    days: int = Query(7, ge=1, le=30),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    try:
+        return fetch_segment_split(db, store, dimension=dimension, days=days)
+    except Exception as exc:
+        logger.exception("Segment split failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
