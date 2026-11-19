@@ -6,6 +6,7 @@ memory mein cache karta hai. Token kabhi print / log / DB mein save nahi hota.
 """
 
 import os
+import re
 import time
 from pathlib import Path
 
@@ -56,6 +57,10 @@ def get_access_token(shop: str) -> str:
 
 def graphql(shop: str, query: str, variables: dict | None = None, max_retries: int = 5) -> dict:
     """GraphQL Admin API call. Throttle hone par wait karke retry karta hai."""
+    # Read-only app: store pe kabhi kuch likhna nahi hai. Koi bhi mutation
+    # (create/update/delete) yahin rok diya jaata hai.
+    if re.match(r"\s*mutation\b", query, re.IGNORECASE) or re.search(r"\bmutation\s*[({A-Za-z]", query, re.IGNORECASE):
+        raise ShopifyError("Blocked: this app is read-only and never sends Shopify mutations")
     url = f"https://{shop}/admin/api/{API_VERSION}/graphql.json"
 
     for attempt in range(max_retries):

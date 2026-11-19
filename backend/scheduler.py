@@ -9,6 +9,7 @@ Har SYNC_INTERVAL_MINUTES (default 15) minute mein:
      dikhta hai)
   2. Quilt alarm check
   3. CVR alarm check
+  4. Microsoft Clarity product views (din mein ek baar, CLARITY_API_TOKEN ho tab)
 
 .env settings (optional):
   ENABLE_SCHEDULER=true / false
@@ -20,6 +21,7 @@ import os
 import threading
 import time
 
+from clarity import sync_clarity
 from cvr_alarm import check_cvr_alarm
 from database import SessionLocal
 from quilt_alarm import check_quilt_alarm
@@ -62,6 +64,13 @@ def run_once() -> dict:
         except Exception as exc:
             logger.exception("CVR alarm failed")
             cvr = {"status": "error", "detail": str(exc)[:300]}
+        try:
+            # Product page views - once a day, skipped without CLARITY_API_TOKEN.
+            clarity = sync_clarity(db, store)
+        except Exception as exc:
+            db.rollback()
+            logger.exception("Clarity sync failed")
+            clarity = {"status": "error", "detail": str(exc)[:300]}
 
         last_run = {
             "status": "success",
@@ -69,6 +78,7 @@ def run_once() -> dict:
             "orders": result["orders"],
             "quilt_alarm": quilt.get("status"),
             "cvr_alarm": cvr.get("status"),
+            "clarity": clarity.get("status"),
         }
         logger.info("Scheduler run: %s", last_run)
     except Exception as exc:

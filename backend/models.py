@@ -1,5 +1,5 @@
 
-from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.sql import func
 
 
@@ -38,6 +38,9 @@ class Product(Base):
     shopify_product_id = Column(String(64), nullable=True)
     product_type = Column(String(255), nullable=True)
     tags = Column(Text, nullable=True)
+    # URL handle (/products/<handle>) - used to match Microsoft Clarity page
+    # views to the product.
+    handle = Column(String(255), nullable=True, index=True)
 
 
 class Order(Base):
@@ -110,3 +113,22 @@ class AlertHistory(Base):
     status = Column(String(50), default="pending")
     triggered_at = Column(DateTime(timezone=True), server_default=func.now())
     resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class ClarityProductDay(Base):
+    """
+    One day of product-page traffic from Microsoft Clarity (Data Export API).
+    Clarity only gives the last 1-3 days and 10 calls a day, so we save one
+    snapshot per day and build the 28-day picture from these rows.
+    sessions = human sessions that opened this product page (bots removed).
+    """
+    __tablename__ = "clarity_product_days"
+    __table_args__ = (UniqueConstraint("store_id", "day", "handle", name="ux_clarity_product_day"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    day = Column(Date, nullable=False, index=True)
+    handle = Column(String(255), nullable=False)
+    sessions = Column(Integer, default=0)
+    bot_sessions = Column(Integer, default=0)
+    fetched_at = Column(DateTime(timezone=True), server_default=func.now())

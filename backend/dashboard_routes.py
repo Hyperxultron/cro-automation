@@ -477,6 +477,38 @@ def product_analytics(
     return fetch_product_analytics(db, store, days=days)
 
 
+@router.get("/clarity-status")
+def clarity_status(shop: str | None = Query(None), db: Session = Depends(get_db)):
+    """Is Microsoft Clarity connected, and how many days of product views are saved?"""
+    import clarity
+
+    store = _get_store(db, shop)
+    days = (
+        db.query(models.ClarityProductDay.day, func.count(models.ClarityProductDay.id), func.sum(models.ClarityProductDay.sessions))
+        .filter(models.ClarityProductDay.store_id == store.id)
+        .group_by(models.ClarityProductDay.day)
+        .order_by(models.ClarityProductDay.day.desc())
+        .limit(60)
+        .all()
+    )
+    handles = {
+        h for (h,) in db.query(models.Product.handle).filter(models.Product.store_id == store.id, models.Product.handle.isnot(None))
+    }
+    latest_handles = (
+        {h for (h,) in db.query(models.ClarityProductDay.handle).filter(
+            models.ClarityProductDay.store_id == store.id, models.ClarityProductDay.day == days[0][0])}
+        if days else set()
+    )
+    return {
+        "token_set": clarity.token() is not None,
+        "last_status": clarity.last_status,
+        "days_saved": len(days),
+        "days": [{"day": d.isoformat(), "products": n, "views": int(v or 0)} for d, n, v in days],
+        "latest_day_products_matched": len(latest_handles & {h.lower() for h in handles}),
+        "latest_day_products_unmatched": len(latest_handles - {h.lower() for h in handles}),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Cart & Checkout Analytics (funnel trend)
 # ---------------------------------------------------------------------------

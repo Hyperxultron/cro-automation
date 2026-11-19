@@ -34,5 +34,5 @@ export const HELP = {
         "Leaky products ranked by revenue left on the table = views × (category conversion − product conversion) × price. Fix the top one first.",
     categories: "Revenue and orders per product category for the last 28 days, vs the 28 days before.",
     productTable:
-        "Orders = orders that include the product. Revenue = product price × quantity (before order-level discounts, shipping and tax).",
+        "Items sold, orders and net sales come from Shopify (same as its \"Total sales by product\" report). Views = real people (bots removed) who opened the product page, from Microsoft Clarity. View → order = orders ÷ views over the same days that have Clarity data.",
 };

@@ -122,6 +122,7 @@ export type ProductRow = {
   cart_to_purchase_rate?: number | null;
   revenue_per_view?: number | null;
   view_to_purchase_rate?: number | null;
+  view_orders?: number;
   adjusted_rate?: number;
   category_rate?: number;
   vs_category_pts?: number;
@@ -148,6 +149,9 @@ export type ProductAnalyticsData = {
   sales_source: "shopify" | "orders_db";
   sales_note: string;
   views_available: boolean;
+  views_source?: "clarity" | null;
+  views_days?: number;
+  views_window_label?: string | null;
   views_note: string | null;
   products: ProductRow[];
   categories: CategoryRow[];

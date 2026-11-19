@@ -2,15 +2,16 @@
 Shopify -> PostgreSQL sync (real data).
 
 - Products: saare products (title, product type, tags).
-  Quilt pehchaan: title / product type / tags mein "quilt" ho toh category = "Quilt".
+  Quilt pehchaan: title mein poora shabd "quilt" ho toh category = "Quilt"
+  ("Quilted Cosmetic Bag" quilt nahi hai).
 - Orders: pichhle `days` din ke orders, Shopify ke asli createdAt time ke saath.
   Test orders skip hote hain. Customer ka naam/email/address save NAHI hota.
 - Dobara chalane par duplicate nahi banta (update hota hai).
 """
 
-from datetime import datetime, timedelta, timezone
-
+import re
 import zlib
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -30,7 +31,7 @@ PRODUCTS_QUERY = """
 query Products($cursor: String) {
   products(first: 250, after: $cursor) {
     pageInfo { hasNextPage endCursor }
-    nodes { id title productType tags }
+    nodes { id title handle productType tags }
   }
 }
 """
@@ -71,9 +72,14 @@ def _parse_dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+_QUILT_WORD = re.compile(r"\bquilts?\b")
+
+
 def is_quilt(title: str, product_type: str, tags: list[str]) -> bool:
-    text = " ".join([title or "", product_type or "", " ".join(tags or [])]).lower()
-    return QUILT_KEYWORD in text
+    # Title only, whole word "quilt": "Quilted Cosmetic Bag" / "Quilted Toiletry
+    # Bag" aren't quilts, and some non-quilts (e.g. a table runner) carry the
+    # product type or tag "Quilt" on this store.
+    return bool(_QUILT_WORD.search((title or "").lower()))
 
 
 def get_or_create_store(db: Session, shop: str) -> models.Store:
@@ -121,6 +127,7 @@ def sync_products(db: Session, store: models.Store) -> dict:
             product.product_name = node["title"][:255]
             product.product_type = product_type[:255]
             product.tags = ", ".join(tags)
+            product.handle = (node.get("handle") or "")[:255] or None
             product.category = "Quilt" if quilt else (product_type[:100] or None)
 
         db.commit()

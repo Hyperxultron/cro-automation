@@ -18,9 +18,12 @@ Finds winners and losers fairly:
 Data sources:
   - purchases / revenue / price: our synced orders (orders that include the
     product, cancelled orders excluded).
-  - views / add-to-cart: Shopify Analytics, via `fetch_product_views`. Until
-    that source is confirmed for this store, view-based columns and the four
-    groups are reported as unavailable - never estimated.
+  - views: Microsoft Clarity product-page sessions (bots removed), saved once
+    a day (clarity.py). Conversion = orders / views over the SAME days that
+    have Clarity data, so a 3-day views total is never divided into 28 days
+    of orders. No Clarity data -> view-based columns and the four groups are
+    reported as unavailable - never estimated. Per-product add-to-cart isn't
+    available from Shopify or Clarity, so it's not shown.
 """
 
 import logging
@@ -54,6 +57,13 @@ PRIOR_VIEWS = 200  # the "200" in the checklist's small-sample adjustment
 # category. Fall back to the product family in the title so each product is
 # compared with similar products.
 TITLE_CATEGORIES = [
+    # Bags first: "Quilted Cosmetic Bag" / "Quilted Toiletry Bag" are not quilts.
+    ("cosmetic bag", "Bags"),
+    ("toiletry bag", "Bags"),
+    (" bag", "Bags"),
+    ("coaster", "Coaster"),
+    ("picture frame", "Picture Frame"),
+    ("sticky note", "Sticky Note Holder"),
     ("quilt", "Quilt"),
     ("tablecloth", "Tablecloth"),
     ("napkin", "Napkins"),
@@ -83,16 +93,18 @@ def product_category(name: str | None, category: str | None) -> str:
     return "Other"
 
 
-def fetch_product_views(store: models.Store, days: int) -> dict[str, dict] | None:
-    """
-    {shopify_product_id: {"views": int, "cart_adds": int}} for the window, or
-    None when per-product views aren't available from Shopify for this store.
+MIN_VIEW_DAYS = 3  # fewer saved Clarity days than this -> groups not shown yet
 
-    Placeholder until the exact Shopify Analytics query for per-product views
-    is confirmed against the store's own report - returning None keeps the
-    page honest (view-based columns show as unavailable).
+
+def fetch_product_views(db: Session, store: models.Store, first_day, last_day) -> dict | None:
     """
-    return None
+    Product page views from Microsoft Clarity (see clarity.py), or None when
+    Clarity isn't connected yet. Shopify Analytics itself has no per-product
+    page views (confirmed with Shopify Sidekick).
+    """
+    from clarity import product_views
+
+    return product_views(db, store, first_day, last_day)
 
 
 def _num(v) -> float:
@@ -102,19 +114,25 @@ def _num(v) -> float:
         return 0.0
 
 
-def _shopify_daily_sales(store: models.Store, days_back: int) -> dict[str, dict[str, dict]] | None:
+_last_sales_error: str | None = None
+
+
+def _shopify_window_sales(store: models.Store, first_day, last_day) -> dict[str, dict] | None:
     """
-    {date: {product_title: {net_items_sold, gross_sales, discounts, sales_reversals,
-    net_sales, total_sales, orders?}}} straight from Shopify Analytics - the same
-    numbers as Shopify's own "Total sales by product" report. None if Shopify
-    refuses the query (the page then falls back to our synced orders).
+    {product_title: {net_items_sold, gross_sales, discounts, sales_reversals,
+    net_sales, total_sales, orders?}} for first_day..last_day (store dates),
+    straight from Shopify Analytics - the same numbers as Shopify's own "Total
+    sales by product" report. None if Shopify refuses every query variant (the
+    page then falls back to our synced orders and shows why).
     """
-    key = (store.store_url, days_back)
+    global _last_sales_error
+    key = (store.store_url, first_day.isoformat(), last_day.isoformat())
     cached = _cache.get(key)
     if cached and cached[0] > time.time():
         return cached[1]
 
     result = None
+    errors: list[str] = []
     # Try the richest query first; drop parts Shopify rejects. Rows without a
     # product title (e.g. custom items) are skipped below either way.
     variants = [
@@ -125,41 +143,36 @@ def _shopify_daily_sales(store: models.Store, days_back: int) -> dict[str, dict[
     for metrics, where in variants:
         q = (
             f"FROM sales SHOW {', '.join(metrics)} {where}"
-            f"GROUP BY product_title TIMESERIES day SINCE -{days_back}d UNTIL today"
+            f"GROUP BY product_title SINCE {first_day.isoformat()} UNTIL {last_day.isoformat()} "
+            "ORDER BY net_sales DESC LIMIT 1000"
         )
         try:
             data = graphql(store.store_url, SHOPIFYQL, {"q": q})["shopifyqlQuery"]
-        except Exception:
+        except Exception as exc:
             logger.exception("Shopify sales-by-product query failed")
+            errors.append(str(exc)[:300])
             break
+        if not data:
+            errors.append("empty shopifyqlQuery response")
+            continue
         if data.get("parseErrors"):
             logger.warning("ShopifyQL sales-by-product parse errors: %s", data["parseErrors"])
+            errors.append(str(data["parseErrors"])[:300])
             continue
         result = {}
         for row in (data.get("tableData") or {}).get("rows") or []:
-            day = str(row.get("day", ""))[:10]
             title = row.get("product_title")
-            if not day or not title:
+            if not title:
                 continue
-            entry = result.setdefault(day, {}).setdefault(str(title), {m: 0.0 for m in metrics})
+            entry = result.setdefault(str(title), {m: 0.0 for m in metrics})
             for m in metrics:
                 entry[m] += _num(row.get(m))
         break
 
-    _cache[key] = (time.time() + CACHE_SECONDS, result)
+    _last_sales_error = None if result is not None else ("; ".join(errors) or "unknown error")
+    # Don't keep a failure around for long - retry after a minute.
+    _cache[key] = (time.time() + (CACHE_SECONDS if result is not None else 60), result)
     return result
-
-
-def _sum_shopify(daily: dict, first_day, last_day) -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    d = first_day
-    while d <= last_day:
-        for title, vals in (daily.get(d.isoformat()) or {}).items():
-            acc = out.setdefault(title, {})
-            for k, v in vals.items():
-                acc[k] = acc.get(k, 0.0) + v
-        d += timedelta(days=1)
-    return out
 
 
 def _merge_shopify_sales(db: Session, store: models.Store, db_rows: list[dict], shop: dict[str, dict]) -> list[dict]:
@@ -257,7 +270,7 @@ def classify(products: list[dict]) -> None:
     for p in products:
         c = by_cat.setdefault(p["category"], {"views": 0, "orders": 0})
         c["views"] += p["views"]
-        c["orders"] += p["orders"]
+        c["orders"] += p.get("view_orders", p["orders"])
     for c in by_cat.values():
         c["rate"] = c["orders"] / c["views"] if c["views"] else 0.0
     # Price for products that sold nothing in the window: the category's
@@ -276,8 +289,9 @@ def classify(products: list[dict]) -> None:
     for p in products:
         cat_rate = by_cat[p["category"]]["rate"]
         views = p["views"]
-        raw_rate = p["orders"] / views if views else 0.0
-        adjusted = (p["orders"] + PRIOR_VIEWS * cat_rate) / (views + PRIOR_VIEWS)
+        orders = p.get("view_orders", p["orders"])
+        raw_rate = orders / views if views else 0.0
+        adjusted = (orders + PRIOR_VIEWS * cat_rate) / (views + PRIOR_VIEWS)
         many_views = views >= cat_view_medians[p["category"]] and views > 0
         high_conv = adjusted >= cat_rate
         if many_views and high_conv:
@@ -313,24 +327,35 @@ def fetch_product_analytics(db: Session, store: models.Store, days: int = 28) ->
 
     # Prefer Shopify's own per-product sales so numbers match Shopify's
     # "Total sales by product" report exactly (net sales, net items sold).
-    daily = _shopify_daily_sales(store, days_back=days * 2 + 3)
+    cur = _shopify_window_sales(store, first_day, last_day)
     sales_source = "orders_db"
-    if daily is not None:
-        cur = _sum_shopify(daily, first_day, last_day)
-        if cur:
-            products = _merge_shopify_sales(db, store, products, cur)
-            prior_rows = _merge_shopify_sales(db, store, prior_rows, _sum_shopify(daily, p_first, p_last))
-            sales_source = "shopify"
+    if cur:
+        products = _merge_shopify_sales(db, store, products, cur)
+        prev_shop = _shopify_window_sales(store, p_first, p_last)
+        if prev_shop is not None:
+            prior_rows = _merge_shopify_sales(db, store, prior_rows, prev_shop)
+        sales_source = "shopify"
     prior = {p["name"]: p for p in prior_rows}
 
-    views = fetch_product_views(store, days)
-    views_available = views is not None
+    clarity = fetch_product_views(db, store, first_day, last_day)
+    view_days = clarity["days"] if clarity else []
+    views = clarity["by_product"] if clarity else None
+    views_available = views is not None and len(view_days) >= MIN_VIEW_DAYS
 
+    # Orders over exactly the days that have view data (for conversion).
+    conv_orders: dict[str, int] = {}
     if views_available:
+        tz = _tz(store)
+        v_start, _ = _day_bounds_utc(view_days[0], tz)
+        _, v_end = _day_bounds_utc(view_days[-1], tz)
+        for r in _sales_by_product(db, store, v_start, v_end):
+            if r["shopify_product_id"]:
+                conv_orders[r["shopify_product_id"]] = r["orders"]
+
         # Products that were viewed but sold nothing belong in the table too
         # (they're often the Leaky / Dead weight ones).
         sold = {p["shopify_product_id"] for p in products}
-        missing = [spid for spid, v in views.items() if spid not in sold and v.get("views")]
+        missing = [spid for spid, v in views.items() if spid not in sold and v]
         if missing:
             for row in db.query(models.Product).filter(
                 models.Product.store_id == store.id, models.Product.shopify_product_id.in_(missing)
@@ -347,13 +372,13 @@ def fetch_product_analytics(db: Session, store: models.Store, days: int = 28) ->
         p["revenue_change_pct"] = (
             round((p["revenue"] - prev["revenue"]) / prev["revenue"] * 100, 1) if prev and prev["revenue"] else None
         )
-        v = (views or {}).get(p["shopify_product_id"] or "") if views_available else None
-        p["views"] = v["views"] if v else (0 if views_available else None)
-        p["cart_adds"] = v["cart_adds"] if v else (0 if views_available else None)
+        spid = p["shopify_product_id"] or ""
+        p["views"] = views.get(spid, 0) if views_available else None
+        p["cart_adds"] = None
+        p["add_to_cart_rate"] = None
+        p["cart_to_purchase_rate"] = None
         if views_available:
-            p["add_to_cart_rate"] = round(p["cart_adds"] / p["views"] * 100, 2) if p["views"] else None
-            p["cart_to_purchase_rate"] = round(p["orders"] / p["cart_adds"] * 100, 2) if p["cart_adds"] else None
-            p["revenue_per_view"] = round(p["revenue"] / p["views"], 2) if p["views"] else None
+            p["view_orders"] = conv_orders.get(spid, 0)
 
     if views_available:
         classify(products)
@@ -392,11 +417,25 @@ def fetch_product_analytics(db: Session, store: models.Store, days: int = 28) ->
             if sales_source == "shopify" else
             "Revenue = product price × quantity from synced orders (before order discounts, refunds, shipping and tax). "
             "Shopify's per-product sales report couldn't be reached, so these may differ slightly from Shopify."
+            + (f" (Shopify said: {_last_sales_error})" if _last_sales_error else "")
         ),
         "views_available": views_available,
-        "views_note": None if views_available else (
-            "Product views and add-to-cart by product aren't connected yet, so the four groups and the "
-            "fix-first list are waiting on that data. Orders and revenue below are real."
+        "views_source": "clarity" if views_available else None,
+        "views_days": len(view_days),
+        "views_window_label": (
+            f"{view_days[0].strftime('%d %b')} - {view_days[-1].strftime('%d %b')} ({len(view_days)} days of Clarity data)"
+            if view_days else None
+        ),
+        "views_note": (
+            f"Views = people (not bots) who opened the product page, from Microsoft Clarity, for "
+            f"{len(view_days)} day(s). Conversion uses orders from those same days. "
+            + ("Groups get more reliable as more days are collected (best after 14+ days)." if len(view_days) < 14 else "")
+            if views_available else
+            f"Microsoft Clarity is connected and collecting product views ({len(view_days)} of {MIN_VIEW_DAYS} days so far). "
+            "The four groups and the fix-first list appear once there are enough days. Orders and sales below are real."
+            if view_days else
+            "Product views aren't connected yet (they come from Microsoft Clarity, because Shopify has no per-product "
+            "page views). Until then the four groups and the fix-first list are waiting on that data. Orders and sales below are real."
         ),
         "products": products,
         "categories": sorted(categories.values(), key=lambda c: c["revenue"], reverse=True),

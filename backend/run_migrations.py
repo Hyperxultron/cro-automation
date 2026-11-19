@@ -62,6 +62,8 @@ STATEMENTS = [
     ADD COLUMN IF NOT EXISTS total_tax DOUBLE PRECISION DEFAULT 0,
     ADD COLUMN IF NOT EXISTS total_refunded DOUBLE PRECISION DEFAULT 0;
     """,
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS handle VARCHAR(255);",
+    "CREATE INDEX IF NOT EXISTS ix_products_handle ON products (handle);",
 ]
 
 

@@ -67,8 +67,8 @@ function ProductAnalytics() {
   const scatterByGroup = useMemo(() => {
     const out: Record<string, { x: number; y: number; z: number; name: string }[]> = {};
     for (const p of data?.products ?? []) {
-      if (!p.group || p.views == null || p.add_to_cart_rate == null) continue;
-      (out[p.group] ??= []).push({ x: p.views, y: p.add_to_cart_rate, z: Math.max(p.revenue, 1), name: p.name });
+      if (!p.group || p.views == null || p.view_to_purchase_rate == null) continue;
+      (out[p.group] ??= []).push({ x: p.views, y: p.view_to_purchase_rate, z: Math.max(p.revenue, 1), name: p.name });
     }
     return out;
   }, [data]);
@@ -91,7 +91,7 @@ function ProductAnalytics() {
       )}
 
       {data?.views_note && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+        <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-xs ${viewsOn ? "border-blue-200 bg-blue-50 text-blue-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
           <Info size={15} className="mt-0.5 shrink-0" />
           {data.views_note}
         </div>
@@ -120,7 +120,7 @@ function ProductAnalytics() {
               <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#edf0f5" />
                 <XAxis type="number" dataKey="x" name="Views" tick={{ fill: "#94a3b8", fontSize: 11 }} label={{ value: "Product views", position: "insideBottom", offset: -5, fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis type="number" dataKey="y" name="Add-to-cart rate" unit="%" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <YAxis type="number" dataKey="y" name="View → order rate" unit="%" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <ZAxis type="number" dataKey="z" range={[30, 300]} />
                 <Tooltip
                   cursor={{ strokeDasharray: "3 3" }}
@@ -129,7 +129,7 @@ function ProductAnalytics() {
                     return d ? (
                       <div className="rounded-lg border border-slate-200 bg-white p-2 text-xs shadow">
                         <p className="font-semibold">{d.name}</p>
-                        <p>{d.x.toLocaleString()} views · {d.y}% add to cart</p>
+                        <p>{d.x.toLocaleString()} views · {d.y}% of viewers ordered</p>
                       </div>
                     ) : null;
                   }}
@@ -247,11 +247,8 @@ function ProductAnalytics() {
                   {viewsOn && (
                     <>
                       <th className="pb-3 pr-4 text-right font-medium">Views</th>
-                      <th className="pb-3 pr-4 text-right font-medium">Add-to-cart rate</th>
-                      <th className="pb-3 pr-4 text-right font-medium">Cart → purchase</th>
-                      <th className="pb-3 pr-4 text-right font-medium">View → purchase</th>
+                      <th className="pb-3 pr-4 text-right font-medium">View → order</th>
                       <th className="pb-3 pr-4 text-right font-medium">vs category</th>
-                      <th className="pb-3 pr-4 text-right font-medium">Revenue / view</th>
                     </>
                   )}
                   <th className="pb-3 pr-4 text-right font-medium">Items sold</th>
@@ -269,14 +266,9 @@ function ProductAnalytics() {
                     {viewsOn && (
                       <>
                         <td className="py-3 pr-4 text-right text-slate-700">{p.views?.toLocaleString() ?? "—"}</td>
-                        <td className="py-3 pr-4 text-right text-slate-700">{pctText(p.add_to_cart_rate)}</td>
-                        <td className="py-3 pr-4 text-right text-slate-700">{pctText(p.cart_to_purchase_rate)}</td>
                         <td className="py-3 pr-4 text-right text-slate-700">{pctText(p.view_to_purchase_rate)}</td>
                         <td className={`py-3 pr-4 text-right ${(p.vs_category_pts ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                           {p.vs_category_pts == null ? "—" : `${p.vs_category_pts > 0 ? "+" : ""}${p.vs_category_pts} pts`}
-                        </td>
-                        <td className="py-3 pr-4 text-right text-slate-700">
-                          {p.revenue_per_view == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD", maximumFractionDigits: 2 }).format(p.revenue_per_view)}
                         </td>
                       </>
                     )}
