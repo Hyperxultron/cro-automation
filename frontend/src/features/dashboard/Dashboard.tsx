@@ -12,6 +12,7 @@ import StoreIntegration from "../store/StoreIntegration";
 import CroRecommendations from "../recommendations/CroRecommendations";
 import ConversionAnalytics from "../analytics/ConversionAnalytics";
 import ProductAnalytics from "../analytics/ProductAnalytics";
+import LandingPages from "../analytics/LandingPages";
 import CartCheckoutAnalytics from "../analytics/CartCheckoutAnalytics";
 import FunnelBars from "../analytics/FunnelBars";
 import InfoTip from "../../components/InfoTip";
@@ -20,7 +21,7 @@ import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
     Bell, CheckCircle2, Clock3, DollarSign, FileText, Filter, Gauge, Globe, History, IndianRupee, LayoutDashboard,
-    Lightbulb, Mail, Menu, Package, RefreshCw, Settings, ShieldCheck,
+    Lightbulb, Mail, Menu, Package, RefreshCw, Route, Settings, ShieldCheck,
     ShoppingBag, ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
 import {
@@ -297,6 +298,7 @@ function Dashboard() {
                 { name: "Overview", icon: LayoutDashboard },
                 { name: "Conversion Analytics", icon: TrendingUp },
                 { name: "Product Analytics", icon: Package },
+                { name: "Landing Pages", icon: Route },
                 { name: "Cart & Checkout", icon: ShoppingCart },
             ],
         },
@@ -469,6 +471,11 @@ function Dashboard() {
                         {activeNav === "Product Analytics" && (
                             <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
                                 <ProductAnalytics />
+                            </div>
+                        )}
+                        {activeNav === "Landing Pages" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <LandingPages />
                             </div>
                         )}
                         {activeNav === "Cart & Checkout" && (

@@ -255,6 +255,48 @@ export type FunnelCompare = {
   steps: FunnelStep[];
 };
 
+export type LandingSplitRow = {
+  label: string;
+  sessions: number;
+  bounce_rate: number | null;
+  added_to_cart_rate: number | null;
+  conversion_rate: number | null;
+  previous_sessions: number | null;
+  previous_bounce_rate: number | null;
+  bounce_change_pts: number | null;
+  previous_conversion_rate: number | null;
+  conversion_change_pts: number | null;
+  too_few_sessions: boolean;
+  share_of_sessions?: number | null;
+};
+
+export type LandingPageRow = Omit<LandingSplitRow, "label" | "share_of_sessions"> & {
+  path: string;
+  page_type: string;
+  revenue: number | null;
+  orders: number | null;
+  revenue_per_session: number | null;
+  top_source: string | null;
+  top_source_share: number | null;
+  bounce_flag: boolean;
+};
+
+export type LandingPagesData = {
+  days: number;
+  window_label: string;
+  compare_label: string;
+  bounce_definition: string;
+  min_sessions: number;
+  bounce_flag_pts: number;
+  revenue_available: boolean;
+  revenue_note: string;
+  pages: LandingPageRow[];
+  page_types: LandingSplitRow[];
+  by_source: LandingSplitRow[];
+  by_device: LandingSplitRow[];
+  errors: Record<string, string>;
+};
+
 export type SegmentSplit = {
   dimension: "device" | "channel";
   days: number;
@@ -366,6 +408,7 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   storeInfo: () => request<StoreInfo>("/dashboard/store-info"),
+  landingPages: (days = 28) => request<LandingPagesData>(`/dashboard/landing-pages?days=${days}`),
   productAnalytics: (days = 28) => request<ProductAnalyticsData>(`/dashboard/product-analytics?days=${days}`),
   productPerformance: (days = 30) =>
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),

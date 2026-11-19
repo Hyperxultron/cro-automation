@@ -35,4 +35,12 @@ export const HELP = {
     categories: "Per category, last 28 days vs the 28 days before. Products = how many different products sold. Items sold = total pieces. Orders = orders with at least one product from this category (an order with 3 tablecloths counts once). \"New / low before\" = it sold almost nothing in the earlier 28 days, so a % change would be misleading.",
     productTable:
         "Items sold, orders and net sales come from Shopify (same as its \"Total sales by product\" report). Views = real people (bots removed) who opened the product page, from Microsoft Clarity. View → order = orders ÷ views over the same days that have Clarity data.",
+    landingPages:
+        "Landing page = the first page a visitor opened. Bounce rate = share of visits that saw only that one page and left (Shopify's definition, bots excluded). Conversion = share of visits that placed an order. Revenue / session = sales from visits that started on this page ÷ its sessions. A red flag means bounce is 5+ points worse than the same page in the previous period.",
+    pageTypes:
+        "Each page type has a different job: Home should send people to collections, Collection to products, Product to the cart. Judge each type against its own past, not against the others.",
+    bounceBySource:
+        "Same bounce rate split by where visitors came from. A high bounce from one source (e.g. Social) usually means the ad or post promised something the page doesn't show.",
+    bounceByDevice:
+        "Bounce rate by device. If mobile is much worse than desktop, check the mobile page (speed, pop-ups, layout).",
 };

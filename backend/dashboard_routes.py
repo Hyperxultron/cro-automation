@@ -29,6 +29,7 @@ from recommendations import build_recommendations
 from benchmarks import get_benchmarks
 from order_health import fetch_order_health
 from product_groups import fetch_product_analytics
+from landing import fetch_landing_pages
 from overview import fetch_overview
 from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
@@ -475,6 +476,21 @@ def product_analytics(
     """Product table, category comparison, four groups and fix-first list (checklist section 4)."""
     store = _get_store(db, shop)
     return fetch_product_analytics(db, store, days=days)
+
+
+@router.get("/landing-pages")
+def landing_pages(
+    days: int = Query(28, ge=7, le=90),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Landing pages, page types and bounce by source / device (checklist section 5)."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_landing_pages(store, days=days)
+    except Exception as exc:
+        logger.exception("Landing pages failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 
 @router.get("/clarity-status")
