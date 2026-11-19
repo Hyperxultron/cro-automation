@@ -104,6 +104,51 @@ export type StoreInfo = {
 
 export type ProductPerformance = TopProduct & { performance_status: "top" | "average" | "low" };
 
+export type ProductGroup = "star" | "hidden_gem" | "leaky" | "dead_weight";
+
+export type ProductRow = {
+  product_id: number;
+  name: string;
+  category: string;
+  orders: number;
+  quantity: number;
+  revenue: number;
+  price: number | null;
+  prior_revenue: number;
+  revenue_change_pct: number | null;
+  views: number | null;
+  cart_adds: number | null;
+  add_to_cart_rate?: number | null;
+  cart_to_purchase_rate?: number | null;
+  revenue_per_view?: number | null;
+  view_to_purchase_rate?: number | null;
+  adjusted_rate?: number;
+  category_rate?: number;
+  vs_category_pts?: number;
+  group?: ProductGroup;
+  revenue_left_on_table?: number;
+};
+
+export type CategoryRow = {
+  category: string;
+  products: number;
+  orders: number;
+  revenue: number;
+  prior_revenue: number;
+  revenue_change_pct: number | null;
+};
+
+export type ProductAnalyticsData = {
+  days: number;
+  window_label: string;
+  prior_window_label: string;
+  views_available: boolean;
+  views_note: string | null;
+  products: ProductRow[];
+  categories: CategoryRow[];
+  fix_first: ProductRow[];
+};
+
 export type FunnelTrendDay = Funnel & {
   cart_abandonment_rate: number | null;
   checkout_abandonment_rate: number | null;
@@ -309,6 +354,7 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   storeInfo: () => request<StoreInfo>("/dashboard/store-info"),
+  productAnalytics: (days = 28) => request<ProductAnalyticsData>(`/dashboard/product-analytics?days=${days}`),
   productPerformance: (days = 30) =>
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
   recommendations: () => request<{ recommendations: Recommendation[] }>("/dashboard/recommendations"),

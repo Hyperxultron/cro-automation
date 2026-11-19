@@ -26,4 +26,13 @@ export const HELP = {
     deviceSplit: "Same numbers split by mobile, desktop and tablet. Look for one device converting much lower than the others.",
     channelSplit:
         "Same numbers split by where visitors came from (social, search, email, direct…). Revenue / session shows which traffic is worth the most.",
+    productWindow:
+        "Last 28 complete days. A long window gives each product enough visits to judge it fairly; changes compare with the 28 days before.",
+    productGroups:
+        "Each product is compared with its own category (quilts with quilts), using an adjusted conversion rate so a product with very few views can't top the list by luck. Stars: many views, high conversion. Hidden gems: few views, high conversion. Leaky: many views, low conversion. Dead weight: few views, low conversion.",
+    fixFirst:
+        "Leaky products ranked by revenue left on the table = views × (category conversion − product conversion) × price. Fix the top one first.",
+    categories: "Revenue and orders per product category for the last 28 days, vs the 28 days before.",
+    productTable:
+        "Orders = orders that include the product. Revenue = product price × quantity (before order-level discounts, shipping and tax).",
 };

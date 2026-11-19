@@ -28,6 +28,7 @@ from quilt_alarm import check_quilt_alarm, RULE_TITLE as QUILT_RULE_TITLE
 from recommendations import build_recommendations
 from benchmarks import get_benchmarks
 from order_health import fetch_order_health
+from product_groups import fetch_product_analytics
 from overview import fetch_overview
 from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
@@ -463,6 +464,17 @@ def product_performance(
             p["performance_status"] = "average"
 
     return {"days": days, "products": products}
+
+
+@router.get("/product-analytics")
+def product_analytics(
+    days: int = Query(28, ge=7, le=60),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Product table, category comparison, four groups and fix-first list (checklist section 4)."""
+    store = _get_store(db, shop)
+    return fetch_product_analytics(db, store, days=days)
 
 
 # ---------------------------------------------------------------------------
