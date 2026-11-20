@@ -413,6 +413,14 @@ export type BuyHeatmap = {
   note?: string | null;
 };
 
+export type KpiRange = "today" | "yesterday" | "last30";
+
+export type KpiTotals = {
+  labels: Record<KpiRange, string>;
+  sales: Record<KpiRange, number | null> & { source: string | null };
+  sessions: Record<KpiRange, number | null> & { source: string | null; error?: string };
+};
+
 export type ChangeLogArea = "theme" | "app" | "price" | "promo" | "ad" | "other";
 
 export type ChangeLogEntry = {
@@ -546,6 +554,7 @@ export const api = {
     request<SalesBreakdown>(`/dashboard/sales-breakdown?period=${period}&compare=${compare}`),
   funnelDevices: (period: "today" | "yesterday" | "last7") =>
     request<DeviceFunnel>(`/dashboard/funnel-devices?period=${period}`),
+  kpiTotals: () => request<KpiTotals>("/dashboard/kpi-totals"),
   buyHeatmap: (days = 28) => request<BuyHeatmap>(`/dashboard/buy-heatmap?days=${days}`),
   segments: (dimension: "device" | "channel", days = 7) =>
     request<SegmentSplit>(`/dashboard/segments?dimension=${dimension}&days=${days}`),

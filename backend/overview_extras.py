@@ -192,3 +192,63 @@ def fetch_buy_heatmap(store: models.Store, days: int = 28, db=None) -> dict:
             return from_orders(str(exc))
 
     return _cached(("heat", store.store_url, days, last.isoformat()), 1800, build)
+
+
+def fetch_kpi_totals(db, store: models.Store) -> dict:
+    """
+    Total sales and total sessions for Today (so far), Yesterday and the last
+    30 complete days - for the two Overview tiles. Both straight from Shopify
+    Analytics (sales = Shopify's "Total sales", sessions = human sessions), so
+    they match Shopify's own reports. Sales fall back to synced orders if
+    ShopifyQL fails.
+    """
+    from shopify_sales import daily_sales
+
+    tz = _tz(store)
+    today = datetime.now(tz).date()
+    yesterday = today - timedelta(days=1)
+    first30 = yesterday - timedelta(days=29)
+
+    def ranges_label():
+        return {
+            "today": f"Today so far ({today.strftime('%a %d %b')})",
+            "yesterday": f"Yesterday ({yesterday.strftime('%a %d %b')})",
+            "last30": f"Last 30 days ({first30.strftime('%d %b')} - {yesterday.strftime('%d %b')})",
+        }
+
+    def sales():
+        try:
+            days = daily_sales(store, first30, today)
+            tot = lambda a, b: round(sum(v["total"] for k, v in days.items() if a.isoformat() <= k <= b.isoformat()), 2)  # noqa: E731
+            return {"today": tot(today, today), "yesterday": tot(yesterday, yesterday),
+                    "last30": tot(first30, yesterday), "source": "shopify"}
+        except Exception as exc:
+            logger.warning("KPI sales from ShopifyQL failed, using synced orders: %s", exc)
+            from overview import _day_bounds_utc
+            from sales import _sales_stats
+
+            def rng(a, b):
+                s, _ = _day_bounds_utc(a, tz)
+                _, e = _day_bounds_utc(b, tz)
+                return _sales_stats(db, store, s, e)["total"]
+            return {"today": rng(today, today), "yesterday": rng(yesterday, yesterday),
+                    "last30": rng(first30, yesterday), "source": "orders"}
+
+    def sessions():
+        try:
+            rows = _run(
+                store,
+                f"FROM sessions SHOW sessions {HUMAN_SESSIONS_FILTER}TIMESERIES day {_since(first30, today)}",
+            )
+            by = {str(r.get("day") or "")[:10]: _i(r.get("sessions")) for r in rows if r.get("day")}
+            tot = lambda a, b: sum(v for k, v in by.items() if a.isoformat() <= k <= b.isoformat())  # noqa: E731
+            return {"today": tot(today, today), "yesterday": tot(yesterday, yesterday),
+                    "last30": tot(first30, yesterday), "source": "shopify"}
+        except Exception as exc:
+            logger.warning("KPI sessions failed: %s", exc)
+            return {"today": None, "yesterday": None, "last30": None, "source": None, "error": str(exc)[:200]}
+
+    def build():
+        return {"labels": ranges_label(), "sales": sales(), "sessions": sessions()}
+
+    return _cached(("kpi", store.store_url, today.isoformat()), 120, build)

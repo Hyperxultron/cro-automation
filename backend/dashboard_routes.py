@@ -694,6 +694,15 @@ def funnel_devices(
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 
+@router.get("/kpi-totals")
+def kpi_totals(shop: str | None = Query(None), db: Session = Depends(get_db)):
+    from overview_extras import fetch_kpi_totals
+
+    store = _get_store(db, shop)
+    ensure_fresh_orders(db, store)
+    return fetch_kpi_totals(db, store)
+
+
 @router.get("/buy-heatmap")
 def buy_heatmap(
     days: int = Query(28, ge=7, le=56),

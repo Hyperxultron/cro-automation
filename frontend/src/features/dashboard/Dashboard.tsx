@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
     api, formatMoney, timeAgo,
-    type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type FunnelCompare, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct, type DeviceFunnel
+    type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type FunnelCompare, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct, type DeviceFunnel, type KpiRange, type KpiTotals
 } from "../../services/api";
 import ChangeLog from "../changelog/ChangeLog";
 import AlarmRules from "../alarms/AlarmRules";
@@ -22,9 +22,9 @@ import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
-    Bell, Moon, Sun, CheckCircle2, Clock3, DollarSign, FileText, Gauge, Globe, History, IndianRupee, LayoutDashboard,
-    Lightbulb, Mail, Menu, Package, RefreshCw, Route, Settings, ShieldCheck,
-    ShoppingBag, ShoppingCart, TrendingUp, Users, X
+    Bell, Moon, Sun, Clock3, DollarSign, FileText, Gauge, Globe, History, IndianRupee, LayoutDashboard,
+    Lightbulb, Menu, Package, RefreshCw, Route, Settings, ShieldCheck,
+    ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
 import {
     Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer,
@@ -79,15 +79,6 @@ function Sparkline({ values, color }: { values: (number | null)[]; color: string
         </div>
     );
 }
-
-// Which live check belongs to which alarm rule (rules now come from the backend,
-// not a hardcoded list - so the Overview can't show a rule that doesn't exist).
-const ruleKind = (rule: AlarmRuleItem): "quilt" | "cvr" | "other" => {
-    const t = rule.title.toLowerCase();
-    if (t.includes("quilt")) return "quilt";
-    if (t.includes("conversion") || t.includes("cvr")) return "cvr";
-    return "other";
-};
 
 // Funnel for one device (Mobile / Desktop), same look as FunnelBars, no comparison.
 function DeviceFunnelBars({ data, device, error }: { data: DeviceFunnel | null; device: string; error: boolean }) {
@@ -170,6 +161,10 @@ function Dashboard() {
     const [summary, setSummary] = useState<DashboardSummary | null>(null);
     const [trend, setTrend] = useState<CvrDay[]>([]);
     const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+    // Total Sales / Total Sessions tiles: Today / Yesterday / Last 30 days.
+    const [kpiTotals, setKpiTotals] = useState<KpiTotals | null>(null);
+    const [salesRange, setSalesRange] = useState<KpiRange>("today");
+    const [sessRange, setSessRange] = useState<KpiRange>("today");
     // Top Selling Products card: its own Today / Yesterday / 7 days switch, always top 5.
     const [topPeriod, setTopPeriod] = useState<"today" | "yesterday" | "last7">("today");
     const [topLoading, setTopLoading] = useState(true);
@@ -205,7 +200,7 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t, ot, oh, ov, cl, st, sb, ar] = await Promise.all([
+            const [s, t, ot, oh, ov, cl, st, sb, ar, kt] = await Promise.all([
                 api.summary(),
                 // 2x the window: the earlier half is the dashed "previous period" line.
                 api.cvrTrend(periodDays * 2).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
@@ -216,6 +211,7 @@ function Dashboard() {
                 api.salesTrend(salesDays).catch(() => null),
                 api.salesBreakdown(overviewPeriod, overviewCompare).catch(() => null),
                 api.alarmRules().catch(() => [] as AlarmRuleItem[]),
+                api.kpiTotals().catch(() => null),
             ]);
             setSummary(s);
             setTrend(t.days);
@@ -226,6 +222,7 @@ function Dashboard() {
             setSalesTrend(st);
             setSalesBreakdown(sb);
             setAlarmRules(ar);
+            setKpiTotals(kt);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unable to load dashboard data");
         } finally {
@@ -299,31 +296,6 @@ function Dashboard() {
         return () => clearInterval(timer);
     }, [loadData]);
 
-    const [testEmail, setTestEmail] = useState<{ ok: boolean; text: string } | null>(null);
-    const [testEmailSending, setTestEmailSending] = useState(false);
-    const sendTestEmail = async () => {
-        setTestEmailSending(true);
-        setTestEmail(null);
-        try {
-            const r = await api.sendDailyReport();
-            if (r.status === "sent") {
-                setTestEmail({ ok: true, text: `Sent: "${r.subject ?? "CRO daily numbers"}". Check your inbox (and spam) in a minute.` });
-            } else {
-                const why = r.detail ?? "unknown error";
-                const hint = why.includes("not set")
-                    ? " Add the email settings (SMTP_HOST, SMTP_USER, SMTP_PASSWORD, DAILY_REPORT_TO) in Render → Environment."
-                    : why.toLowerCase().includes("auth") || why.includes("535")
-                      ? " Gmail refused the login: use a Gmail App Password, not the normal password."
-                      : "";
-                setTestEmail({ ok: false, text: `Not sent: ${why}.${hint}` });
-            }
-        } catch (e) {
-            setTestEmail({ ok: false, text: `Not sent: ${e instanceof Error ? e.message : "request failed"}` });
-        } finally {
-            setTestEmailSending(false);
-        }
-    };
-
     const refreshNow = async () => {
         setSyncing(true);
         try {
@@ -335,8 +307,6 @@ function Dashboard() {
         setSyncing(false);
     };
 
-    const quilt = summary?.quilt_alarm;
-    const cvr = summary?.cvr;
     const currency = summary?.store.currency;
     // Conversion trend (checklist section 1, P2): straight line with dots for
     // this period, the period before as a dashed line, sessions as bars behind,
@@ -422,64 +392,7 @@ function Dashboard() {
     const dailyRange = rangeText(dailySales?.current);
     const dailyNice = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
-    const quiltStatusText: Record<string, string> = {
-        normal: "Normal",
-        alarm_triggered: "ALERT",
-        alarm_active: "ALERT",
-        no_quilt_orders_yet: "No quilt orders yet",
-        no_quilt_products: "No quilt products",
-        no_active_rule: "No active quilt rule",
-    };
-    const quiltAlert = quilt?.status === "alarm_triggered" || quilt?.status === "alarm_active";
-    const cvrAlert = cvr?.drop_percent != null && cvr.drop_percent >= 20;
-
-    const alarmLive: Record<number, { text: string; alert: boolean }> = {
-        1: {
-            text: quilt?.last_quilt_order_at
-                ? `Last quilt order ${quilt.last_quilt_order_number} · ${timeAgo(quilt.last_quilt_order_at)} (${quilt.hours_elapsed}h / ${quilt.threshold_hours}h)`
-                : quiltStatusText[quilt?.status ?? ""] ?? "Loading…",
-            alert: quiltAlert,
-        },
-        2: {
-            text: cvr
-                ? `Yesterday ${cvr.yesterday_cvr ?? "—"}% vs ${cvr.previous_cvr ?? "—"}% · change ${cvr.drop_percent === null ? "—" : `${-cvr.drop_percent}%`}`
-                : summary?.cvr_error
-                  ? "Analytics unavailable"
-                  : "Loading…",
-            alert: cvrAlert,
-        },
-    };
-
-    const quiltRuleOff = quilt?.status === "no_active_rule";
-    const activeRuleCount = alarmRules.filter((r) => r.is_active).length;
-    const activities = summary
-        ? [
-              {
-                  title: "Quilt orders monitoring",
-                  detail: alarmLive[1].text,
-                  time: quiltAlert ? "Alert" : quiltRuleOff ? "Off" : quilt?.status === "normal" ? "Normal" : "Active",
-                  type: quiltAlert ? "alert" : quiltRuleOff ? "email" : "monitor",
-              },
-              {
-                  title: "CVR comparison",
-                  detail: alarmLive[2].text,
-                  time: cvrAlert ? "Alert" : cvr ? "Normal" : "Pending",
-                  type: cvrAlert ? "alert" : "monitor",
-              },
-              {
-                  title: "Shopify data sync",
-                  detail: `${summary.store.name} · synced ${timeAgo(summary.store.last_synced_at)} · auto every 15 min`,
-                  time: "Live",
-                  type: "monitor",
-              },
-              {
-                  title: "Email notifications",
-                  detail: "Email delivery setup pending",
-                  time: "Pending",
-                  type: "email",
-              },
-          ]
-        : [];
+     const activeRuleCount = alarmRules.filter((r) => r.is_active).length;
 
 
     const navGroups = [
@@ -817,13 +730,6 @@ function Dashboard() {
                                     {w}
                                 </div>
                             ))}
-                            {(quiltAlert || cvrAlert) && (
-                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
-                                    {quiltAlert && <p>⚠ No quilt order for {quilt?.hours_elapsed} hours (limit {quilt?.threshold_hours}h). Last: {quilt?.last_quilt_order_number}</p>}
-                                    {cvrAlert && <p>⚠ Conversion rate dropped {cvr?.drop_percent}% ({cvr?.previous_cvr}% → {cvr?.yesterday_cvr}%)</p>}
-                                </div>
-                            )}
-
                             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                                 {(() => {
                                     const revenueMetric = overview?.metrics.revenue;
@@ -863,6 +769,7 @@ function Dashboard() {
                                         label: string; period: string; value: string; icon: typeof Bell; color: string;
                                         change: { text: string; tone: string; showArrow: boolean }; note: string;
                                         spark?: (number | null)[]; help: string;
+                                        range?: { value: KpiRange; set: (r: KpiRange) => void };
                                     }[] = [
                                         {
                                             label: "Revenue", help: HELP.revenue,
@@ -876,14 +783,13 @@ function Dashboard() {
                                                 : "Loading…",
                                         },
                                         {
-                                            label: "Quilt Orders Today", help: HELP.quiltOrders,
-                                            period: "Today",
-                                            value: loading ? "…" : String(summary?.today.quilt_orders ?? "—"),
-                                            // Quilt volume (a handful a day) is always below the ~20-order
-                                            // threshold, so a % change here would be noise.
+                                            label: "Total Sales", help: "Shopify's Total sales (after discounts and returns, incl. tax and shipping), same as Shopify Analytics. Switch between today so far, yesterday and the last 30 complete days.",
+                                            period: kpiTotals?.labels[salesRange] ?? "…",
+                                            value: kpiTotals?.sales[salesRange] != null ? formatMoney(kpiTotals.sales[salesRange] as number, currency) : loading ? "…" : "—",
                                             change: { text: "", tone: "slate", showArrow: false },
-                                            icon: ShoppingBag, color: "blue",
-                                            note: summary ? `Yesterday: ${summary.yesterday.quilt_orders} quilt orders (store time)` : "Loading…",
+                                            icon: MoneyIcon, color: "blue",
+                                            note: "",
+                                            range: { value: salesRange, set: setSalesRange },
                                         },
                                         {
                                             label: "Conversion Rate", help: HELP.conversionRate,
@@ -904,12 +810,13 @@ function Dashboard() {
                                             note: baselineNote(ordersMetric, (v) => String(v)),
                                         },
                                         {
-                                            label: "Open Alerts", help: HELP.openAlerts,
-                                            period: "Now",
-                                            value: loading ? "…" : String(summary?.open_alerts ?? 0),
+                                            label: "Total Sessions", help: "Visits to the store from Shopify Analytics, bots excluded (same as Shopify's Sessions). Switch between today so far, yesterday and the last 30 complete days.",
+                                            period: kpiTotals?.labels[sessRange] ?? "…",
+                                            value: kpiTotals?.sessions[sessRange] != null ? (kpiTotals.sessions[sessRange] as number).toLocaleString() : loading ? "…" : "—",
                                             change: { text: "", tone: "slate", showArrow: false },
-                                            icon: Bell, color: "amber",
-                                            note: `${activeRuleCount} ${activeRuleCount === 1 ? "rule" : "rules"} active · email delivery setup pending`,
+                                            icon: Users, color: "amber",
+                                            note: "",
+                                            range: { value: sessRange, set: setSessRange },
                                         },
                                     ];
 
@@ -939,6 +846,19 @@ function Dashboard() {
                                                         </span>
                                                     )}
                                                 </div>
+                                                {item.range && (
+                                                    <div className="relative mt-4 flex w-fit rounded-lg bg-white/15 p-0.5 text-[11px]">
+                                                        {([["today", "Today"], ["yesterday", "Yesterday"], ["last30", "30 days"]] as const).map(([k, l]) => (
+                                                            <button
+                                                                key={k}
+                                                                onClick={() => item.range?.set(k)}
+                                                                className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold ${item.range?.value === k ? "bg-white text-slate-900" : "text-white/85 hover:bg-white/10"}`}
+                                                            >
+                                                                {l}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
                                                 {item.spark && <Sparkline values={item.spark} color="#ffffff" />}
                                                 <p className="cro-note relative mt-2 text-xs text-white/80">{item.note}</p>
                                             </div>
@@ -1148,8 +1068,8 @@ function Dashboard() {
                                 <TrafficSourcesCard />
                             </div>
 
-                            <div className="grid gap-6 xl:grid-cols-3">
-                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm xl:col-span-2 sm:p-6">
+                            <div className="grid gap-6">
+                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                                         <div>
                                             <h3 className="font-bold text-slate-900">Conversion Rate Trend<InfoTip text={HELP.cvrTrend} /></h3>
@@ -1222,41 +1142,6 @@ function Dashboard() {
                                     )}
                                 </section>
 
-                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <h3 className="font-bold text-slate-900">Alarm Overview<InfoTip text={HELP.alarms} /></h3>
-                                            <p className="mt-1 text-xs text-slate-400">Your automation rules</p>
-                                        </div>
-                                        <Bell className="text-blue-500" size={21} />
-                                    </div>
-                                    <div className="mt-7 space-y-5">
-                                        {alarmRules.length === 0 && (
-                                            <p className="text-xs text-slate-400">{loading ? "Loading…" : "No alarm rules set up yet."}</p>
-                                        )}
-                                        {alarmRules.map((rule) => {
-                                            const kind = ruleKind(rule);
-                                            const Icon = kind === "quilt" ? ShoppingBag : kind === "cvr" ? TrendingUp : Bell;
-                                            const live = kind === "quilt" ? alarmLive[1] : kind === "cvr" ? alarmLive[2] : undefined;
-                                            return (
-                                                <div key={rule.id} className="flex items-start gap-3">
-                                                    <div className="rounded-xl bg-blue-50 p-2.5 text-blue-600"><Icon size={20} /></div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="text-sm font-semibold text-slate-800">{rule.title}</p>
-                                                        {rule.description && <p className="mt-1 text-xs text-slate-400">{rule.description}</p>}
-                                                        {summary && rule.is_active && live && (
-                                                            <p className={`mt-1 text-xs ${live.alert ? "font-semibold text-red-600" : "text-slate-500"}`}>{live.text}</p>
-                                                        )}
-                                                        <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${rule.is_active ? (live?.alert ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700") : "bg-slate-100 text-slate-500"}`}>
-                                                            {rule.is_active ? (live?.alert ? "Alert" : "Enabled") : "Paused"}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <button onClick={() => setActiveNav("Alarm Rules")} className="mt-7 w-full rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Manage Alarm Rules</button>
-                                </section>
                             </div>
 
                             <div className="grid gap-6 xl:grid-cols-3">
@@ -1398,47 +1283,6 @@ function Dashboard() {
                                 </p>
                             </section>
 
-                            <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-                                <div className="mb-5 flex items-center justify-between">
-                                    <div>
-                                        <h3 className="font-bold text-slate-900">Recent Activity</h3>
-                                        <p className="mt-1 text-xs text-slate-400">Live monitoring status</p>
-                                    </div>
-                                    <button onClick={() => setActiveNav("Alert History")} className="text-xs font-semibold text-blue-600 hover:text-blue-800">View history →</button>
-                                </div>
-                                <div className="divide-y divide-slate-100">
-                                    {activities.map((item) => (
-                                        <div key={item.title} className="flex items-center gap-3 py-4">
-                                            <div className={`rounded-lg p-2 ${item.type === "email" ? "bg-violet-50 text-violet-600" : item.type === "alert" ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`}>
-                                                {item.type === "email" ? <Mail size={18} /> : <CheckCircle2 size={18} />}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <p className="text-sm font-semibold text-slate-800">{item.title}</p>
-                                                <p className="mt-1 text-xs text-slate-400">{item.detail}</p>
-                                            </div>
-                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.type === "alert" ? "bg-red-50 text-red-700" : item.type === "email" ? "bg-slate-100 text-slate-600" : "bg-emerald-50 text-emerald-700"}`}>{item.time}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
-                                    <div className="min-w-0 flex-1">
-                                        <p className="text-sm font-semibold text-slate-800">Daily numbers email</p>
-                                        <p className="cro-note mt-1 text-xs text-slate-500">
-                                            Sent automatically every day at 11:00 AM IST with yesterday's numbers. Use the button to send one now and check it arrives.
-                                        </p>
-                                        {testEmail && (
-                                            <p className={`mt-2 text-xs font-medium ${testEmail.ok ? "text-emerald-700" : "text-red-600"}`}>{testEmail.text}</p>
-                                        )}
-                                    </div>
-                                    <button
-                                        onClick={sendTestEmail}
-                                        disabled={testEmailSending}
-                                        className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                                    >
-                                        <Mail size={16} /> {testEmailSending ? "Sending…" : "Send test email"}
-                                    </button>
-                                </div>
-                            </section>
 
                             <footer className="flex flex-col justify-between gap-2 border-t border-slate-200 py-5 text-xs text-slate-400 sm:flex-row">
                                 <p>© 2026 CRO Automation. All rights reserved.</p>
