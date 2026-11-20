@@ -49,7 +49,8 @@ def _env_threshold() -> float | None:
     return v or None
 
 
-def _payments(store: models.Store, first, last) -> tuple[dict | None, str | None]:
+def _payments(store: models.Store, first, last, wanted: set | None = None,
+              divisor: int = 1) -> tuple[dict | None, str | None]:
     """
     Daily rows (TIMESERIES day) summed in Python for the days we want.
 
@@ -60,7 +61,9 @@ def _payments(store: models.Store, first, last) -> tuple[dict | None, str | None
     """
     since = (first - timedelta(days=3)).isoformat()
     until = (last + timedelta(days=1)).isoformat()
-    wanted = {(first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1)}
+    # `wanted` lets the 4-week comparison pick 4 single days out of a month;
+    # `divisor` then turns the summed counts into a per-day average.
+    wanted = wanted or {(first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1)}
     q = (
         "FROM payment_attempts SHOW unique_payment_attempts, successful_payments, failed_payment_attempts "
         f"GROUP BY payment_method TIMESERIES day SINCE {since} UNTIL {until}"
@@ -92,6 +95,10 @@ def _payments(store: models.Store, first, last) -> tuple[dict | None, str | None
             a = acc.setdefault(r.get(key), {"unique_payment_attempts": 0, "successful_payments": 0, "failed_payment_attempts": 0, key: r.get(key)})
             for m in ("unique_payment_attempts", "successful_payments", "failed_payment_attempts"):
                 a[m] += _i(r.get(m))
+        if divisor > 1:
+            for a in acc.values():
+                for m in ("unique_payment_attempts", "successful_payments", "failed_payment_attempts"):
+                    a[m] = round(a[m] / divisor)
         return sorted(acc.values(), key=lambda x: -x["unique_payment_attempts"])
 
     seen_days = sorted({str(r.get("day") or "")[:10] for r in out["method"] or [] if r.get("day") and _i(r.get("unique_payment_attempts"))})
@@ -137,10 +144,12 @@ def _payments(store: models.Store, first, last) -> tuple[dict | None, str | None
     ))
 
 
-def _orders(db: Session, store: models.Store, first, last):
+def _orders(db: Session, store: models.Store, first, last, end_override=None):
     tz = _tz(store)
     start, _ = _day_bounds_utc(first, tz)
     _, end = _day_bounds_utc(last, tz)
+    if end_override is not None:
+        end = min(end, end_override)
     base = db.query(models.Order).filter(
         models.Order.store_id == store.id,
         models.Order.cancelled_at.is_(None),
@@ -214,9 +223,80 @@ def _items(qtys: list[int]) -> dict:
     }
 
 
+COMPARE_MODES = ("previous", "last_week", "4week_avg")
+
+
+def _compare_windows(first, last, mode: str):
+    """[(first, last)] baseline windows for the chosen comparison.
+    previous  - the same number of days just before
+    last_week - the same days one week earlier (ranges up to 7 days)
+    4week_avg - the same weekday in each of the 4 previous weeks (single days)"""
+    n = (last - first).days + 1
+    if mode == "last_week" and n <= 7:
+        return [(first - timedelta(days=7), last - timedelta(days=7))]
+    if mode == "4week_avg" and n == 1:
+        return [(first - timedelta(days=7 * w), first - timedelta(days=7 * w)) for w in range(1, 5)]
+    return [(first - timedelta(days=n), first - timedelta(days=1))]
+
+
+def _compare_label(wins, mode: str, partial_today: bool) -> str:
+    if len(wins) > 1:
+        return f"avg of the last 4 {wins[0][0].strftime('%A')}s" + (" (same time of day)" if partial_today else "")
+    a, b = wins[0]
+    if a == b:
+        txt = a.strftime("%a %d %b")
+        return txt + (" (same time of day)" if partial_today else "")
+    return f"{a.strftime('%d %b')} - {b.strftime('%d %b')}"
+
+
+def _baseline(db: Session, store: models.Store, first, last, mode: str, period: str | None,
+              threshold: float | None) -> dict:
+    wins = _compare_windows(first, last, mode)
+    tz = _tz(store)
+    now = datetime.now(tz)
+    partial = period == "today"
+    k = len(wins)
+    if k > 1:
+        wanted = {w[0].isoformat() for w in wins}
+        pay, pay_err = _payments(store, wins[-1][0], wins[0][0], wanted=wanted, divisor=k)
+    else:
+        pay, pay_err = _payments(store, wins[0][0], wins[0][1])
+    values: list[float] = []
+    qtys: list[int] = []
+    for a, b in wins:
+        cut = None
+        if partial:
+            # Today so far vs the same clock time on the baseline day.
+            start, _ = _day_bounds_utc(a, tz)
+            cut = start + (now - now.replace(hour=0, minute=0, second=0, microsecond=0))
+        v, q = _orders(db, store, a, b, end_override=cut)
+        values += v
+        qtys += q
+    ov = _histogram(values, threshold)
+    ip = _items(qtys)
+    return {
+        "mode": mode,
+        "label": _compare_label(wins, mode, partial),
+        # Payment data has no time-of-day cut, so on Today the baseline is a
+        # full day: compare rates and shares, not raw counts.
+        "payment_counts_comparable": not partial,
+        "payments": pay,
+        "payments_error": pay_err,
+        "order_values": {
+            "orders": round(ov["orders"] / k, 1),
+            "average": ov["average"],
+            "median": ov["median"],
+            "near_threshold_share": ov["near_threshold_share"],
+            "at_or_above_threshold_share": ov["at_or_above_threshold_share"],
+        },
+        "items_per_order": {"average_items": ip["average_items"], "single_item_share": ip["single_item_share"]},
+    }
+
+
 def fetch_cart_extras(db: Session, store: models.Store, days: int = 28, threshold: float | None = None,
-                      period: str | None = None) -> dict:
-    """period: None (last `days` complete days), "yesterday", or "today" (live, so far)."""
+                      period: str | None = None, compare: str | None = None) -> dict:
+    """period: None (last `days` complete days), "yesterday", or "today" (live, so far).
+    compare: None (no comparison) or one of COMPARE_MODES."""
     threshold = threshold if threshold else _env_threshold()
     period = period if period in ("today", "yesterday") else None
     first, last, _, _, window_label, _ = period_windows(store, days, period)
@@ -230,6 +310,14 @@ def fetch_cart_extras(db: Session, store: models.Store, days: int = 28, threshol
             ttl = 120 if period == "today" else CACHE_SECONDS
             _cache[key] = (time.time() + ttl, (payments, pay_err))
 
+    comparison = None
+    if compare in COMPARE_MODES:
+        try:
+            comparison = _baseline(db, store, first, last, compare, period, threshold)
+        except Exception as exc:
+            logger.warning("Cart extras comparison failed: %s", exc)
+            comparison = {"mode": compare, "error": str(exc)[:300]}
+
     values, qtys = _orders(db, store, first, last)
     return {
         "days": days,
@@ -239,6 +327,7 @@ def fetch_cart_extras(db: Session, store: models.Store, days: int = 28, threshol
         "payments_error": pay_err,
         "order_values": _histogram(values, threshold),
         "items_per_order": _items(qtys),
+        "comparison": comparison,
         "not_available": [
             "Checkout step drop-off (contact → address → shipping → payment) needs Shopify customer events, "
             "which Shopify Analytics doesn't store.",

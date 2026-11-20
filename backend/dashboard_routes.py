@@ -528,6 +528,7 @@ def cart_extras(
     days: int = Query(28, ge=7, le=90),
     period: str | None = Query(None, pattern="^(today|yesterday)$"),
     threshold: float | None = Query(None, ge=0),
+    compare: str | None = Query(None, pattern="^(previous|last_week|4week_avg)$"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
@@ -535,7 +536,7 @@ def cart_extras(
     store = _get_store(db, shop)
     if period in ("today", "yesterday"):
         ensure_fresh_orders(db, store)  # order values / items come from our synced copy
-    return fetch_cart_extras(db, store, days=days, threshold=threshold, period=period)
+    return fetch_cart_extras(db, store, days=days, threshold=threshold, period=period, compare=compare)
 
 
 @router.post("/send-daily-report")

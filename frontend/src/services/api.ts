@@ -382,7 +382,34 @@ export type CartExtras = {
     single_item_share: number | null;
     bars: { label: string; orders: number; share: number }[];
   };
+  comparison: CartCompareData | null;
   not_available: string[];
+};
+
+export type CartCompare = "previous" | "last_week" | "4week_avg";
+
+export type CartCompareData = {
+  mode: CartCompare;
+  error?: string;
+  label?: string;
+  payment_counts_comparable?: boolean;
+  payments?: {
+    methods: PaymentRow[];
+    wallets: PaymentRow[];
+    attempts: number;
+    successful: number;
+    failed_attempts: number;
+    authorization_rate: number | null;
+  } | null;
+  payments_error?: string | null;
+  order_values?: {
+    orders: number;
+    average: number | null;
+    median: number | null;
+    near_threshold_share: number | null;
+    at_or_above_threshold_share: number | null;
+  };
+  items_per_order?: { average_items: number | null; single_item_share: number | null };
 };
 
 export type SegmentSplit = {
@@ -532,9 +559,9 @@ export const api = {
   storeInfo: () => request<StoreInfo>("/dashboard/store-info"),
   siteHealth: (range: LandingRange = 28) =>
     request<SiteHealthData>(`/dashboard/site-health?${typeof range === "number" ? `days=${range}` : `period=${range}`}`),
-  cartExtras: (range: LandingRange = 28, threshold?: number | null) =>
+  cartExtras: (range: LandingRange = 28, threshold?: number | null, compare?: CartCompare | null) =>
     request<CartExtras>(
-      `/dashboard/cart-extras?${typeof range === "number" ? `days=${range}` : `period=${range}`}${threshold ? `&threshold=${threshold}` : ""}`,
+      `/dashboard/cart-extras?${typeof range === "number" ? `days=${range}` : `period=${range}`}${threshold ? `&threshold=${threshold}` : ""}${compare ? `&compare=${compare}` : ""}`,
     ),
   landingPages: (range: LandingRange = 28) =>
     request<LandingPagesData>(
