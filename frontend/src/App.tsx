@@ -1,5 +1,6 @@
 import Dashboard from "./features/dashboard/Dashboard";
 import ShopifyAuth from "./ShopifyAuth";
+import OceanCursor from "./components/OceanCursor";
 
 function App() {
   // ShopifyAuth sirf Shopify Admin (embedded app) ke andar chalta hai.
@@ -10,6 +11,7 @@ function App() {
     <>
       {insideShopify && <ShopifyAuth />}
       <Dashboard />
+      <OceanCursor />
     </>
   );
 }
