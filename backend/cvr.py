@@ -137,3 +137,48 @@ def cvr_comparison(daily: list[dict], store: models.Store) -> dict:
         "previous_cvr": p,
         "drop_percent": drop,
     }
+
+
+MIN_ALARM_SESSIONS = 30  # isse kam sessions wale din par CVR bharosemand nahi
+
+
+def cvr_vs_weekday_average(daily: list[dict], store: models.Store, weeks: int = 4) -> dict:
+    """
+    Kal ka CVR vs pichhle `weeks` hafton ke ussi weekday ka average CVR.
+    (e.g. kal Tuesday tha -> pichhle 4 Tuesdays ka average)
+    Drop % = (avg - kal) / avg * 100. Kam data ho toh drop None.
+    """
+    by_date = {r["date"]: r for r in daily}
+    yesterday = store_today(store) - timedelta(days=1)
+    y_row = by_date.get(yesterday.isoformat(), {})
+    y_cvr, y_sessions = y_row.get("cvr"), y_row.get("sessions") or 0
+
+    baseline = []
+    for w in range(1, weeks + 1):
+        d = (yesterday - timedelta(days=7 * w)).isoformat()
+        row = by_date.get(d)
+        if row and row.get("cvr") is not None and (row.get("sessions") or 0) >= MIN_ALARM_SESSIONS:
+            baseline.append({"date": d, "cvr": row["cvr"], "sessions": row.get("sessions")})
+
+    avg = round(sum(b["cvr"] for b in baseline) / len(baseline), 2) if baseline else None
+
+    drop = None
+    reason = None
+    if y_cvr is None or y_sessions < MIN_ALARM_SESSIONS:
+        reason = "too_few_sessions_yesterday"
+    elif len(baseline) < max(2, weeks - 1) or not avg:
+        reason = "not_enough_past_weeks"
+    else:
+        drop = round((avg - y_cvr) / avg * 100, 2)
+
+    return {
+        "yesterday_date": yesterday.isoformat(),
+        "yesterday_weekday": yesterday.strftime("%A"),
+        "yesterday_cvr": y_cvr,
+        "yesterday_sessions": y_sessions,
+        "baseline_weeks": weeks,
+        "baseline_days": baseline,
+        "baseline_cvr": avg,
+        "drop_percent": drop,
+        "reason": reason,
+    }

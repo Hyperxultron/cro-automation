@@ -78,6 +78,7 @@ export type AlarmRuleItem = {
   last_checked_at: string | null;
   last_triggered_at: string | null;
   live_status: string | null;
+  live_detail?: string | null;
 };
 
 export type SettingsData = {

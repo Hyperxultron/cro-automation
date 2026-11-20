@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 import models
 from cvr import fetch_daily_cvr, cvr_comparison
-from cvr_alarm import check_cvr_alarm, CVR_RULE_TITLE
+from cvr_alarm import check_cvr_alarm, CVR_RULE_TITLES, get_or_create_cvr_rule
 from dependencies import get_db
 from funnel import fetch_funnel, fetch_funnel_compare, fetch_funnel_trend
 from quilt_alarm import check_quilt_alarm, RULE_TITLE as QUILT_RULE_TITLE
@@ -333,6 +333,7 @@ def dashboard_sync(
 @router.get("/alarm-rules")
 def list_alarm_rules(shop: str | None = Query(None), db: Session = Depends(get_db)):
     store = _get_store(db, shop)
+    get_or_create_cvr_rule(db)  # purana CVR rule naye naam/description mein badal jaata hai
     rules = db.query(models.AlarmRule).order_by(models.AlarmRule.id.asc()).all()
 
     out = []
@@ -346,12 +347,17 @@ def list_alarm_rules(shop: str | None = Query(None), db: Session = Depends(get_d
             .scalar()
         )
         live_status = None
+        live_detail = None
         if rule.is_active:
             try:
                 if rule.title == QUILT_RULE_TITLE:
-                    live_status = check_quilt_alarm(db, store.id).get("status")
-                elif rule.title == CVR_RULE_TITLE:
-                    live_status = check_cvr_alarm(db, store).get("status")
+                    res = check_quilt_alarm(db, store.id)
+                    live_status = res.get("status")
+                    live_detail = _quilt_detail(res)
+                elif rule.title in CVR_RULE_TITLES:
+                    res = check_cvr_alarm(db, store)
+                    live_status = res.get("status")
+                    live_detail = _cvr_detail(res)
             except Exception:
                 logger.exception("Live status check failed for rule %s", rule.id)
                 live_status = "error"
@@ -366,9 +372,35 @@ def list_alarm_rules(shop: str | None = Query(None), db: Session = Depends(get_d
                 "last_checked_at": rule.last_checked_at.isoformat() if rule.last_checked_at else None,
                 "last_triggered_at": last_triggered.isoformat() if last_triggered else None,
                 "live_status": live_status,
+                "live_detail": live_detail,
             }
         )
     return out
+
+
+def _quilt_detail(res: dict) -> str | None:
+    hours = res.get("hours_elapsed")
+    if hours is None:
+        return None
+    return f"Last quilt order {res.get('last_quilt_order_number')} was {hours:.1f}h ago (limit {res.get('threshold_hours'):g}h)."
+
+
+def _cvr_detail(res: dict) -> str | None:
+    if res.get("yesterday_date") is None:
+        return None
+    day = res.get("yesterday_weekday")
+    if res.get("reason") == "too_few_sessions_yesterday":
+        return f"Yesterday ({day}) had only {res.get('yesterday_sessions') or 0} sessions, too few to judge."
+    if res.get("reason") == "not_enough_past_weeks":
+        return f"Not enough past {day}s with data yet to build a 4-week average."
+    drop = res.get("drop_percent")
+    if drop is None:
+        return None
+    direction = f"{abs(drop):g}% below" if drop > 0 else f"{abs(drop):g}% above"
+    return (
+        f"Yesterday ({day}) {res.get('yesterday_cvr')}% vs {day} 4-week avg "
+        f"{res.get('baseline_cvr')}%: {direction}. Alerts at {res.get('threshold_percent'):g}% below."
+    )
 
 
 class AlarmRulePatch(BaseModel):
