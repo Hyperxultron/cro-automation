@@ -10,6 +10,13 @@
     <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      // Ocean Pro theme: apply the saved light/dark choice before first paint.
+      try { if (localStorage.getItem("cro-theme") === "dark") document.documentElement.dataset.theme = "dark"; } catch (e) {}
+    </script>
     <title>CRO Automation</title>
   </head>
   <body>

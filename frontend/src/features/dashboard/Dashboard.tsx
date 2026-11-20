@@ -21,7 +21,7 @@ import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
-    Bell, CheckCircle2, Clock3, DollarSign, FileText, Gauge, Globe, History, IndianRupee, LayoutDashboard,
+    Bell, Moon, Sun, CheckCircle2, Clock3, DollarSign, FileText, Gauge, Globe, History, IndianRupee, LayoutDashboard,
     Lightbulb, Mail, Menu, Package, RefreshCw, Route, Settings, ShieldCheck,
     ShoppingBag, ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
@@ -88,7 +88,35 @@ const ruleKind = (rule: AlarmRuleItem): "quilt" | "cvr" | "other" => {
     return "other";
 };
 
+// Logo A from the approved Ocean Pro preview (funnel + rising arrow).
+function BrandMark() {
+    return (
+        <svg viewBox="0 0 32 32" className="h-9 w-9 shrink-0 rounded-[10px]" aria-hidden="true">
+            <defs>
+                <linearGradient id="cro-mark" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stopColor="#4f46e5" />
+                    <stop offset="1" stopColor="#06b6d4" />
+                </linearGradient>
+            </defs>
+            <rect width="32" height="32" rx="9" fill="url(#cro-mark)" />
+            <path d="M7 8h18l-7 8.5v6l-4 2v-8z" fill="#fff" opacity=".32" />
+            <path d="M9.5 21l5-5 3 3 6.5-6.5M19.5 12.5h4.5V17" stroke="#fff" strokeWidth="2.3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
 function Dashboard() {
+    // Light / dark (Ocean Pro). Saved per browser; index.html applies it before paint.
+    const [theme, setTheme] = useState<"light" | "dark">(() =>
+        typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light",
+    );
+    const toggleTheme = () => {
+        const next = theme === "dark" ? "light" : "dark";
+        setTheme(next);
+        if (next === "dark") document.documentElement.dataset.theme = "dark";
+        else delete document.documentElement.dataset.theme;
+        try { localStorage.setItem("cro-theme", next); } catch { /* private mode */ }
+    };
     const [alarmRules, setAlarmRules] = useState<AlarmRuleItem[]>([]);
     const [activeNav, setActiveNav] = useState("Overview");
     const [mobileMenu, setMobileMenu] = useState(false);
@@ -421,7 +449,7 @@ function Dashboard() {
     ];
 
     return (
-        <div className="min-h-screen bg-[#f5f7fb] text-slate-800">
+        <div className="ocean-bg min-h-screen text-slate-800">
             <div className="flex min-h-screen">
 
                 {mobileMenu && (
@@ -431,15 +459,13 @@ function Dashboard() {
                     />
                 )}
 
-                <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col bg-[#111c32] text-white transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${mobileMenu ? "translate-x-0" : "-translate-x-full"}`}>
-                    <div className="flex h-20 items-center justify-between border-b border-white/10 px-6">
+                <aside className={`ocean-side fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col text-white transition-transform lg:rounded-r-3xl lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${mobileMenu ? "translate-x-0" : "-translate-x-full"}`}>
+                    <div className="flex h-20 items-center justify-between px-6">
                         <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500">
-                                <Activity size={23} />
-                            </div>
+                            <BrandMark />
                             <div>
-                                <h1 className="text-lg font-bold tracking-tight">CRO<span className="text-blue-400">.AI</span></h1>
-                                <p className="text-[10px] tracking-[2px] text-slate-400">AUTOMATION</p>
+                                <h1 className="text-[15px] font-bold tracking-tight text-white">CRO.AI</h1>
+                                <p className="text-[9.5px] uppercase tracking-[0.2em] text-[#7fb0c6]">Automation</p>
                             </div>
                         </div>
                         <button className="lg:hidden" onClick={() => setMobileMenu(false)}>
@@ -447,11 +473,11 @@ function Dashboard() {
                         </button>
                     </div>
 
-                    <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-8">
+                    <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4">
                         {navGroups.map((group) => (
                         <div key={group.label} className="mb-6">
-                        <p className="mb-3 text-[10px] font-semibold uppercase tracking-[2px] text-slate-500">{group.label}</p>
-                        <nav className="space-y-1.5">
+                        <p className="mb-2 px-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[#7fb0c6]">{group.label}</p>
+                        <nav className="space-y-1">
                             {group.items.map((item) => {
                                 const Icon = item.icon;
                                 return (
@@ -461,15 +487,15 @@ function Dashboard() {
                                             setActiveNav(item.name);
                                             setMobileMenu(false);
                                         }}
-                                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm transition ${activeNav === item.name ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}
+                                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] transition ${activeNav === item.name ? "ocean-nav-on font-semibold shadow-lg shadow-black/10" : "text-[#b6d6e6] hover:bg-white/10 hover:text-white"}`}
                                     >
                                         <Icon size={18} />
                                         {item.name}
                                         {item.name === "Alarm Rules" && (
-                                            <span className="ml-auto rounded-full bg-blue-500/20 px-2 py-0.5 text-xs text-blue-300">02</span>
+                                            <span className="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-[10.5px] text-white">02</span>
                                         )}
                                         {(item.name === "Reports" || item.name === "Team") && (
-                                            <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-slate-400">Soon</span>
+                                            <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-[#7fb0c6]">Soon</span>
                                         )}
                                     </button>
                                 );
@@ -482,29 +508,29 @@ function Dashboard() {
                     {/* Hidden on short screens so the menu above always has room. */}
                     <div className="p-5 [@media(max-height:860px)]:hidden">
                         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                            <div className="mb-3 flex items-center gap-2 text-blue-300">
+                            <div className="mb-3 flex items-center gap-2 text-[#bae6fd]">
                                 <ShieldCheck size={18} />
                                 <span className="text-xs font-semibold">Automation Status</span>
                             </div>
                             <p className="text-2xl font-bold">{activeRuleCount} / {alarmRules.length}</p>
-                            <p className="mt-1 text-xs text-slate-400">Alarm rules enabled</p>
+                            <p className="mt-1 text-xs text-[#7fb0c6]">Alarm rules enabled</p>
                             <div className="mt-4 h-1.5 rounded-full bg-white/10">
-                                <div className="h-full rounded-full bg-blue-500" style={{ width: `${alarmRules.length ? (activeRuleCount / alarmRules.length) * 100 : 0}%` }} />
+                                <div className="h-full rounded-full bg-[#5eead4]" style={{ width: `${alarmRules.length ? (activeRuleCount / alarmRules.length) * 100 : 0}%` }} />
                             </div>
                         </div>
                         <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-5">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-500 text-sm font-bold">A</div>
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-sm font-bold">A</div>
                             <div>
                                 <p className="text-sm font-medium">Admin</p>
-                                <p className="text-xs text-slate-500">CRO Workspace</p>
+                                <p className="text-xs text-[#7fb0c6]">CRO Workspace</p>
                             </div>
-                            <Settings size={17} className="ml-auto text-slate-500" />
+                            <Settings size={17} className="ml-auto text-[#7fb0c6]" />
                         </div>
                     </div>
                 </aside>
 
                 <main className="min-w-0 flex-1">
-                    <header className="flex h-20 items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8">
+                    <header className="ocean-bg flex h-20 items-center justify-between border-b border-slate-200 px-5 sm:px-8">
                         <div className="flex items-center gap-3">
                             <button className="lg:hidden" onClick={() => setMobileMenu(true)}>
                                 <Menu size={23} />
@@ -521,13 +547,21 @@ function Dashboard() {
                                     {error ? "Backend offline" : summary ? `Live · ${summary.store.name}` : "Connecting…"}
                                 </span>
                             </div>
-                            <button onClick={() => setActiveNav("Alert History")} className="relative rounded-xl border border-slate-200 p-2.5 hover:bg-slate-50">
+                            <button
+                                onClick={toggleTheme}
+                                title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                                aria-label="Switch light / dark mode"
+                                className="rounded-xl border border-slate-200 bg-white p-2.5 hover:bg-slate-50"
+                            >
+                                {theme === "dark" ? <Sun size={19} /> : <Moon size={19} />}
+                            </button>
+                            <button onClick={() => setActiveNav("Alert History")} className="relative rounded-xl border border-slate-200 bg-white p-2.5 hover:bg-slate-50">
                                 <Bell size={19} />
                                 {(summary?.open_alerts ?? 0) > 0 && (
                                     <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
                                 )}
                             </button>
-                            <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700 sm:flex">A</div>
+                            <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white sm:flex">A</div>
                         </div>
                     </header>
 
@@ -827,43 +861,34 @@ function Dashboard() {
                                         },
                                     ];
 
-                                    const colors: Record<string, string> = {
-                                        blue: "bg-blue-50 text-blue-600",
-                                        violet: "bg-violet-50 text-violet-600",
-                                        emerald: "bg-emerald-50 text-emerald-600",
-                                        amber: "bg-amber-50 text-amber-600",
-                                        rose: "bg-rose-50 text-rose-600",
+                                    // Ocean Pro: colourful gradient tiles, white text. Up/down is
+                                    // still shown by the arrow and the +/- sign on the chip.
+                                    const tile: Record<string, string> = {
+                                        rose: "kpi-blue", blue: "kpi-teal", violet: "kpi-indigo", emerald: "kpi-amber", amber: "kpi-rose",
                                     };
-                                    const sparkColor: Record<string, string> = {
-                                        rose: "#f43f5e", violet: "#8b5cf6", emerald: "#10b981", blue: "#3b82f6",
-                                    };
-                                    const toneText: Record<string, string> = {
-                                        emerald: "text-emerald-600",
-                                        red: "text-red-600",
-                                        slate: "text-slate-400",
-                                    };
-
                                     return cards.map((item) => {
                                         const Icon = item.icon;
                                         const isDown = item.change.tone === "red";
                                         return (
-                                            <div key={item.label} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-                                                <div className="flex items-center justify-between">
+                                            <div key={item.label} className={`kpi-tile ${tile[item.color] ?? "kpi-blue"} rounded-2xl p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg`}>
+                                                <div className="relative flex items-center justify-between">
                                                     <div>
-                                                        <p className="text-sm font-medium text-slate-500">{item.label}<InfoTip text={item.help} /></p>
-                                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.period}</p>
+                                                        <p className="text-sm font-medium text-white/90">{item.label}<InfoTip text={item.help} /></p>
+                                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-white/70">{item.period}</p>
                                                     </div>
-                                                    <div className={`rounded-xl p-2.5 ${colors[item.color]}`}><Icon size={20} /></div>
+                                                    <div className="rounded-xl bg-white/20 p-2.5 text-white"><Icon size={20} /></div>
                                                 </div>
-                                                <div className="mt-4 flex items-end justify-between">
-                                                    <h3 className="text-3xl font-bold tracking-tight text-slate-900">{item.value}</h3>
-                                                    <span className={`mb-1 flex items-center gap-1 text-xs font-semibold ${toneText[item.change.tone] ?? "text-slate-400"}`}>
-                                                        {item.change.showArrow && (isDown ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />)}
-                                                        {item.change.text}
-                                                    </span>
+                                                <div className="relative mt-4 flex flex-wrap items-end justify-between gap-2">
+                                                    <h3 className="text-3xl font-semibold tracking-tight text-white">{item.value}</h3>
+                                                    {item.change.text && (
+                                                        <span className={`kpi-chip mb-1 flex items-center gap-1 text-xs font-semibold text-white ${item.change.tone === "slate" ? "opacity-80" : ""}`}>
+                                                            {item.change.showArrow && (isDown ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />)}
+                                                            {item.change.text}
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                {item.spark && <Sparkline values={item.spark} color={sparkColor[item.color] ?? "#94a3b8"} />}
-                                                <p className="mt-2 text-xs text-slate-400">{item.note}</p>
+                                                {item.spark && <Sparkline values={item.spark} color="#ffffff" />}
+                                                <p className="relative mt-2 text-xs text-white/80">{item.note}</p>
                                             </div>
                                         );
                                     });
