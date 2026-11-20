@@ -408,6 +408,9 @@ export type BuyHeatmap = {
   cells: { weekday: number; hour: number; sessions: number; orders: number; cvr: number | null }[];
   hours_with_data: number;
   average_cvr: number | null;
+  metric?: "cvr" | "orders";
+  total_orders?: number;
+  note?: string | null;
 };
 
 export type ChangeLogArea = "theme" | "app" | "price" | "promo" | "ad" | "other";

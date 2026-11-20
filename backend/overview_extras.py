@@ -73,21 +73,57 @@ def fetch_device_funnel(store: models.Store, period: str = "yesterday") -> dict:
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
-def fetch_buy_heatmap(store: models.Store, days: int = 28) -> dict:
+def _hour_rows(store: models.Store, first, last) -> list[dict]:
+    """Hourly session rows for first..last (store days), asked for in 7-day
+    pieces: one long hourly query was refused live, while the 9-day hourly
+    query the Today funnel uses works. One extra day either side because UTC
+    hour buckets spill over store-time days."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    chunks = []
+    a = first
+    while a <= last:
+        b = min(a + timedelta(days=6), last)
+        chunks.append((a, b))
+        a = b + timedelta(days=1)
+
+    def one(ab):
+        a, b = ab
+        return _run(
+            store,
+            "FROM sessions SHOW sessions, sessions_that_completed_checkout "
+            f"{HUMAN_SESSIONS_FILTER}TIMESERIES hour "
+            f"{_since(a - timedelta(days=1), b + timedelta(days=1))}",
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        parts = list(pool.map(one, chunks))
+    # chunks overlap by the spill-over days: keep each UTC hour once
+    seen, rows = set(), []
+    for part in parts:
+        for r in part:
+            k = str(r.get("hour"))
+            if k not in seen:
+                seen.add(k)
+                rows.append(r)
+    return rows
+
+
+def fetch_buy_heatmap(store: models.Store, days: int = 28, db=None) -> dict:
+    """
+    Conversion rate by weekday x hour from Shopify sessions. If Shopify's
+    hourly data can't be read, falls back to our synced orders (order time in
+    store time zone) and shows order counts per hour instead.
+    """
     from funnel import _local_hour
 
     tz = _tz(store)
     last = datetime.now(tz).date() - timedelta(days=1)
     first = last - timedelta(days=days - 1)
+    label = f"{first.strftime('%d %b')} - {last.strftime('%d %b')} (last {days} complete days, store time)"
 
-    def build():
-        # one extra day either side: UTC hour buckets spill over store-time days
-        rows = _run(
-            store,
-            "FROM sessions SHOW sessions, sessions_that_completed_checkout "
-            f"{HUMAN_SESSIONS_FILTER}TIMESERIES hour "
-            f"{_since(first - timedelta(days=1), last + timedelta(days=1))}",
-        )
+    def from_sessions():
+        rows = _hour_rows(store, first, last)
         grid = {(w, h): [0, 0] for w in range(7) for h in range(24)}
         seen = 0
         for r in rows:
@@ -98,25 +134,61 @@ def fetch_buy_heatmap(store: models.Store, days: int = 28) -> dict:
             cell[0] += _i(r.get("sessions"))
             cell[1] += _i(r.get("sessions_that_completed_checkout"))
             seen += 1
+        if not seen:
+            raise ValueError("no hourly rows returned")
         cells = [
-            {
-                "weekday": w,
-                "hour": h,
-                "sessions": s,
-                "orders": o,
-                "cvr": round(o / s * 100, 2) if s >= 20 else None,  # too few visits = no colour
-            }
+            {"weekday": w, "hour": h, "sessions": s, "orders": o,
+             "cvr": round(o / s * 100, 2) if s >= 20 else None}  # too few visits = no colour
             for (w, h), (s, o) in sorted(grid.items())
         ]
-        total_s = sum(c["sessions"] for c in cells)
-        total_o = sum(c["orders"] for c in cells)
-        return {
-            "days": days,
-            "window_label": f"{first.strftime('%d %b')} - {last.strftime('%d %b')} (last {days} complete days, store time)",
-            "weekdays": list(WEEKDAYS),
-            "cells": cells,
-            "hours_with_data": seen,
-            "average_cvr": round(total_o / total_s * 100, 2) if total_s else None,
-        }
+        ts = sum(c["sessions"] for c in cells)
+        to = sum(c["orders"] for c in cells)
+        return {"metric": "cvr", "source": "shopify_sessions", "days": days, "window_label": label,
+                "weekdays": list(WEEKDAYS), "cells": cells, "hours_with_data": seen,
+                "average_cvr": round(to / ts * 100, 2) if ts else None, "note": None}
+
+    def from_orders(reason: str):
+        from overview import _day_bounds_utc
+
+        start, _ = _day_bounds_utc(first, tz)
+        _, end = _day_bounds_utc(last, tz)
+        q = (
+            db.query(models.Order.created_at)
+            .filter(
+                models.Order.store_id == store.id,
+                models.Order.shopify_order_id.isnot(None),
+                models.Order.cancelled_at.is_(None),
+                models.Order.created_at >= start,
+                models.Order.created_at < end,
+            )
+        )
+        grid = {(w, h): 0 for w in range(7) for h in range(24)}
+        total = 0
+        for (created,) in q:
+            if created is None:
+                continue
+            if created.tzinfo is None:
+                from datetime import timezone as _utc
+                created = created.replace(tzinfo=_utc.utc)
+            t = created.astimezone(tz)
+            grid[(t.weekday(), t.hour)] += 1
+            total += 1
+        cells = [{"weekday": w, "hour": h, "sessions": 0, "orders": n, "cvr": None}
+                 for (w, h), n in sorted(grid.items())]
+        return {"metric": "orders", "source": "synced_orders", "days": days, "window_label": label,
+                "weekdays": list(WEEKDAYS), "cells": cells, "hours_with_data": total,
+                "average_cvr": None, "total_orders": total,
+                "note": "Shopify's hourly visit data couldn't be read, so this shows when orders were placed "
+                        "(from our synced orders) instead of conversion rate.",
+                "error": reason[:200]}
+
+    def build():
+        try:
+            return from_sessions()
+        except Exception as exc:
+            logger.warning("Hourly sessions heatmap failed, using orders: %s", exc)
+            if db is None:
+                raise
+            return from_orders(str(exc))
 
     return _cached(("heat", store.store_url, days, last.isoformat()), 1800, build)

@@ -134,7 +134,10 @@ export function BuyHeatmapCard() {
 
     const option = useMemo<EChartsOption | null>(() => {
         if (!data) return null;
-        const vals = data.cells.filter((c) => c.cvr !== null).map((c) => c.cvr as number);
+        const byOrders = data.metric === "orders";
+        // Fallback mode: colour = number of orders placed in that hour.
+        const valueOf = (c: BuyHeatmap["cells"][number]) => (byOrders ? c.orders : c.cvr);
+        const vals = data.cells.map(valueOf).filter((v): v is number => v !== null);
         const max = vals.length ? Math.max(...vals) : 1;
         const hours = Array.from({ length: 24 }, (_, h) => (h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p`));
         return {
@@ -144,7 +147,9 @@ export function BuyHeatmapCard() {
                 formatter: (p: unknown) => {
                     const v = (p as { value: [number, number, number | null, number, number] }).value;
                     const [h, w, cvr, s, o] = v;
-                    return `<div style="font-weight:600">${data.weekdays[w]} ${hours[h]}-${hours[(h + 1) % 24]}</div>`
+                    const head = `<div style="font-weight:600">${data.weekdays[w]} ${hours[h]}-${hours[(h + 1) % 24]}</div>`;
+                    if (byOrders) return head + `${o} orders placed in this hour`;
+                    return head
                         + (cvr === null ? `${s.toLocaleString()} visits (too few to judge)` : `${cvr}% conversion<br><span style="color:${t.muted}">${o} orders from ${s.toLocaleString()} visits</span>`);
                 },
             },
@@ -155,23 +160,32 @@ export function BuyHeatmapCard() {
                 dimension: 2, itemHeight: 140, itemWidth: 12,
                 inRange: { color: t.seq }, outOfRange: { color: t.grid },
                 textStyle: { color: t.muted, fontSize: 10, fontFamily: FONT },
-                formatter: (v: unknown) => `${Number(v).toFixed(1)}%`,
+                formatter: (v: unknown) => (byOrders ? `${Math.round(Number(v))}` : `${Number(v).toFixed(1)}%`),
             },
             series: [{
                 type: "heatmap",
-                data: data.cells.map((c) => [c.hour, c.weekday, c.cvr, c.sessions, c.orders]),
+                data: data.cells.map((c) => [c.hour, c.weekday, valueOf(c), c.sessions, c.orders]),
                 itemStyle: { borderColor: t.surface, borderWidth: 2, borderRadius: 4 },
                 emphasis: { itemStyle: { borderColor: t.text, borderWidth: 1 } },
             }],
         };
     }, [data, t]);
 
-    const best = data?.cells.filter((c) => c.cvr !== null).sort((a, b) => (b.cvr ?? 0) - (a.cvr ?? 0))[0];
+    const byOrders = data?.metric === "orders";
+    const best = byOrders
+        ? [...(data?.cells ?? [])].sort((a, b) => b.orders - a.orders)[0]
+        : data?.cells.filter((c) => c.cvr !== null).sort((a, b) => (b.cvr ?? 0) - (a.cvr ?? 0))[0];
     return (
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
             <h3 className="font-bold text-slate-900">When do people buy?<InfoTip text="Conversion rate (orders ÷ visits, bots excluded) for each weekday and hour, store time, over the last 28 complete days. Darker = more of the visitors in that hour bought. Grey = fewer than 20 visits, too few to judge. Drag the handles on the colour scale to spotlight hours." /></h3>
             <p className="mt-1 text-xs text-slate-500">{data?.window_label ?? (err ? "" : "Loading…")}</p>
-            {best && data?.average_cvr != null && (
+            {byOrders && best && best.orders > 0 && (
+                <p className="mt-2 text-sm text-slate-600">
+                    Busiest hour: <b className="text-slate-900">{data?.weekdays[best.weekday]} around {best.hour}:00</b> ({best.orders} orders over {data?.days} days).
+                </p>
+            )}
+            {byOrders && data?.note && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.note}</p>}
+            {!byOrders && best && data?.average_cvr != null && (
                 <p className="mt-2 text-sm text-slate-600">
                     Best hour: <b className="text-slate-900">{data.weekdays[best.weekday]} around {best.hour}:00</b> ({best.cvr}% vs {data.average_cvr}% average).
                 </p>

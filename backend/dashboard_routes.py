@@ -694,7 +694,7 @@ def buy_heatmap(
 
     store = _get_store(db, shop)
     try:
-        return fetch_buy_heatmap(store, days=days)
+        return fetch_buy_heatmap(store, days=days, db=db)
     except Exception as exc:
         logger.exception("Buy heatmap failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
