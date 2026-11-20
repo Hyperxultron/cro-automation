@@ -24,10 +24,11 @@ import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
 import { BRAND, Logo } from "../../brand";
+import { auth, isAuthEnabled } from "../../services/api";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
     Bell, ChevronDown, Moon, Sun, Clock3, DollarSign, FileText, FlaskConical, Gauge, Globe, History, IndianRupee, LayoutDashboard,
-    Lightbulb, Menu, Microscope, Package, RefreshCw, Route, Settings, ShieldCheck,
+    Lightbulb, LogOut, Menu, Microscope, Package, RefreshCw, Route, Settings, ShieldCheck,
     ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
 import {
@@ -500,9 +501,9 @@ function Dashboard() {
                         ))}
                     </div>
 
-                    {/* Hidden on short screens so the menu above always has room. */}
-                    <div className="p-5 [@media(max-height:860px)]:hidden">
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    {/* On short screens only the status card hides, so the menu keeps room and logout stays visible. */}
+                    <div className="p-5 [@media(max-height:860px)]:pt-2">
+                        <div className="mb-5 rounded-2xl border border-white/10 bg-white/5 p-4 [@media(max-height:860px)]:hidden">
                             <div className="mb-3 flex items-center gap-2 text-[#bae6fd]">
                                 <ShieldCheck size={18} />
                                 <span className="text-xs font-semibold">Automation Status</span>
@@ -513,7 +514,7 @@ function Dashboard() {
                                 <div className="h-full rounded-full bg-[#5eead4]" style={{ width: `${alarmRules.length ? (activeRuleCount / alarmRules.length) * 100 : 0}%` }} />
                             </div>
                         </div>
-                        <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-5">
+                        <div className="flex items-center gap-3 border-t border-white/10 pt-5 [@media(max-height:860px)]:pt-3">
                             <Logo size={36} />
                             <div className="min-w-0">
                                 <p className="truncate text-sm font-semibold">{BRAND.name}</p>
@@ -530,6 +531,16 @@ function Dashboard() {
                             >
                                 <Settings size={17} />
                             </button>
+                            {isAuthEnabled() && (
+                                <button
+                                    onClick={() => auth.logout()}
+                                    title="Log out"
+                                    aria-label="Log out"
+                                    className="rounded-lg p-1.5 text-[#7fb0c6] transition hover:bg-white/10 hover:text-white"
+                                >
+                                    <LogOut size={17} />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </aside>

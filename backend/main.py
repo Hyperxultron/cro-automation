@@ -1,6 +1,7 @@
 import models
 from shopify_routes import router as shopify_router
 from dashboard_routes import router as dashboard_router
+from auth import router as auth_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends
@@ -18,6 +19,7 @@ app = FastAPI(
 )
 app.include_router(shopify_router)
 app.include_router(dashboard_router)
+app.include_router(auth_router)
 
 from scheduler import start_scheduler, stop_scheduler
 import scheduler as cro_scheduler
