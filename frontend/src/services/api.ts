@@ -629,6 +629,18 @@ export type GeoSplit = {
   errors: Record<string, string>;
 };
 
+export type GridCell = { sessions: number; bounce_rate: number | null; added_to_cart_rate: number | null; conversion_rate: number | null; enough_data: boolean };
+export type Grid = { rows: string[]; columns: string[]; cells: GridCell[][]; row_totals: GridCell[]; column_totals: GridCell[] };
+export type LandingGrids = {
+  days: number;
+  period: string;
+  window_label: string;
+  min_sessions: number;
+  page_source: Grid | null;
+  type_device: Grid | null;
+  errors: Record<string, string>;
+};
+
 export type SegmentSplit = {
   dimension: "device" | "channel";
   days: number;
@@ -787,6 +799,10 @@ export const api = {
   cartExtras: (range: LandingRange = 28, threshold?: number | null, compare?: CartCompare | null) =>
     request<CartExtras>(
       `/dashboard/cart-extras?${typeof range === "number" ? `days=${range}` : `period=${range}`}${threshold ? `&threshold=${threshold}` : ""}${compare ? `&compare=${compare}` : ""}`,
+    ),
+  landingGrids: (range: LandingRange = 28) =>
+    request<LandingGrids>(
+      typeof range === "number" ? `/dashboard/landing-grids?days=${range}` : `/dashboard/landing-grids?period=${range}`,
     ),
   landingPages: (range: LandingRange = 28) =>
     request<LandingPagesData>(

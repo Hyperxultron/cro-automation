@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import LandingGrids from "./LandingGrids";
 import { AlertTriangle, Info, MonitorSmartphone, Route, Search, Share2 } from "lucide-react";
 import { api, type LandingRange, formatMoney, type DashboardSummary, type LandingPagesData, type LandingSplitRow } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
@@ -318,6 +319,8 @@ function LandingPages() {
               </button>
             )}
           </section>
+
+          <LandingGrids range={days} />
 
           {Object.keys(data.errors).length > 0 && (
             <p className="text-xs text-slate-400">

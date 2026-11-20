@@ -30,6 +30,7 @@ from benchmarks import get_benchmarks
 from order_health import fetch_order_health
 from product_groups import fetch_product_analytics
 from landing import fetch_landing_pages
+from landing_grids import fetch_landing_grids
 from site_health import fetch_site_health
 from cart_extras import fetch_cart_extras
 from overview import fetch_overview
@@ -494,6 +495,22 @@ def product_analytics(
     """Product table, category comparison, four groups and fix-first list (checklist section 4)."""
     store = _get_store(db, shop)
     return fetch_product_analytics(db, store, days=days)
+
+
+@router.get("/landing-grids")
+def landing_grids(
+    days: int = Query(28, ge=7, le=90),
+    period: str | None = Query(None, pattern="^(today|yesterday)$"),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Landing page x source and device x page type grids (checklist section 3, P2)."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_landing_grids(store, days=days, period=period)
+    except Exception as exc:
+        logger.exception("Landing grids failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 
 @router.get("/landing-pages")
