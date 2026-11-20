@@ -121,6 +121,9 @@ function CartExtras() {
           <h3 className="font-bold text-slate-900">Payment methods &amp; failed payments<InfoTip text={HELP.payments} /></h3>
         </div>
         <p className="mb-4 text-xs text-slate-500">{data.window_label}</p>
+        {p && data.payments_error && (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.payments_error}</p>
+        )}
         {!p ? (
           <p className="text-xs text-slate-400">Payment data couldn't be loaded from Shopify{data.payments_error ? ` (${data.payments_error})` : ""}.</p>
         ) : (

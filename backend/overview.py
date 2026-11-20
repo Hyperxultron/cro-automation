@@ -113,6 +113,10 @@ def _same_weekday_dates_back(target_date, weeks_back: int) -> list:
     return [target_date - timedelta(days=7 * w) for w in range(1, weeks_back + 1)]
 
 
+class _Done(Exception):
+    """Early exit from the CVR block once the live 'today' numbers are set."""
+
+
 def fetch_overview(
     db: Session,
     store: models.Store,
@@ -225,19 +229,36 @@ def fetch_overview(
     cvr_baseline = None
     cvr_too_early = True
     cvr_error = None
+    cvr_converted = None
     try:
+        if period == "today":
+            # Live: today's sessions so far vs the same weekday last week up
+            # to the same hour (hourly ShopifyQL, same data as Shopify's own
+            # conversion rate = sessions that completed checkout / sessions).
+            from funnel import _today_funnel
+            cur, prev, _pv, _now = _today_funnel(store)
+            cvr_sessions = cur["sessions"] or None
+            cvr_converted = cur["completed_checkout"]
+            cvr_value = round(cvr_converted / cvr_sessions * 100, 2) if cvr_sessions else None
+            if prev and prev["sessions"]:
+                cvr_baseline = round(prev["completed_checkout"] / prev["sessions"] * 100, 2)
+            cvr_too_early = (cvr_sessions or 0) < MIN_SESSIONS_FOR_COMPARISON
+            raise _Done()
         daily = fetch_daily_cvr(db, store, days=35)
         by_date = {r["date"]: r for r in daily}
         target_row = by_date.get(target_date.isoformat())
         if target_row:
             cvr_value = target_row["cvr"]
             cvr_sessions = target_row["sessions"]
+            if cvr_value is not None and cvr_sessions:
+                cvr_converted = round(cvr_value * cvr_sessions / 100)
         if period == "last7":
             window_dates = [(target_date - timedelta(days=i)).isoformat() for i in range(7)]
             prior_dates = [(target_date - timedelta(days=i)).isoformat() for i in range(7, 14)]
             window_rows = [by_date[d] for d in window_dates if d in by_date]
             prior_rows = [by_date[d] for d in prior_dates if d in by_date]
             cvr_sessions = sum(r["sessions"] for r in window_rows) or None
+            cvr_converted = None  # 7-day CVR uses orders / sessions
             total_orders_7d = current["orders"]
             cvr_value = round(total_orders_7d / cvr_sessions * 100, 2) if cvr_sessions else None
             prior_sessions = sum(r["sessions"] for r in prior_rows) or None
@@ -257,6 +278,8 @@ def fetch_overview(
             comparable = [by_date[d]["cvr"] for d in weekday_dates if by_date.get(d) and by_date[d]["cvr"] is not None]
             cvr_baseline = round(sum(comparable) / len(comparable), 2) if comparable else None
         cvr_too_early = (cvr_sessions or 0) < MIN_SESSIONS_FOR_COMPARISON
+    except _Done:
+        pass
     except Exception as exc:  # Shopify analytics down shouldn't break the page
         cvr_error = str(exc)[:300]
 
@@ -265,7 +288,8 @@ def fetch_overview(
     )
     metrics["conversion_rate"]["sessions"] = cvr_sessions
     metrics["conversion_rate"]["base_label"] = (
-        f"{current['orders']} of ~{cvr_sessions:,} sessions" if cvr_sessions else "sessions pending"
+        f"{cvr_converted:,} buying sessions of {cvr_sessions:,}" if cvr_sessions and cvr_converted is not None
+        else (f"{cvr_sessions:,} sessions" if cvr_sessions else "sessions pending")
     )
 
     # ---- 4. Health strip ------------------------------------------------------

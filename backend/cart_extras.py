@@ -22,7 +22,7 @@ import os
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -49,14 +49,25 @@ def _env_threshold() -> float | None:
     return v or None
 
 
-def _payments(store: models.Store, cur_w: str) -> tuple[dict | None, str | None]:
+def _payments(store: models.Store, first, last) -> tuple[dict | None, str | None]:
+    """
+    Daily rows (TIMESERIES day) summed in Python for the days we want.
+
+    Why not just SINCE first UNTIL last: for a one-day window (Today /
+    Yesterday) that returned no payment rows at all, while 28 days worked.
+    Asking for daily rows over a slightly wider window and picking the days
+    ourselves gives the same totals as Shopify's payment report for any range.
+    """
+    since = (first - timedelta(days=3)).isoformat()
+    until = (last + timedelta(days=1)).isoformat()
+    wanted = {(first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1)}
     q = (
-        "FROM payment_attempts SHOW unique_payment_attempts, successful_payments, failed_payment_attempts, "
-        f"total_payment_attempts GROUP BY payment_method {cur_w} ORDER BY unique_payment_attempts DESC"
+        "FROM payment_attempts SHOW unique_payment_attempts, successful_payments, failed_payment_attempts "
+        f"GROUP BY payment_method TIMESERIES day SINCE {since} UNTIL {until}"
     )
     q_wallet = (
         "FROM payment_attempts SHOW unique_payment_attempts, successful_payments, failed_payment_attempts "
-        f"GROUP BY payment_card_wallet {cur_w} ORDER BY unique_payment_attempts DESC"
+        f"GROUP BY payment_card_wallet TIMESERIES day SINCE {since} UNTIL {until}"
     )
     out = {}
     errors = []
@@ -71,6 +82,23 @@ def _payments(store: models.Store, cur_w: str) -> tuple[dict | None, str | None]
                 out[name] = None
     if out.get("method") is None:
         return None, "; ".join(errors) or "payment data unavailable"
+
+    def summed(raw, key):
+        acc: dict[str, dict] = {}
+        for r in raw or []:
+            day = str(r.get("day") or "")[:10]
+            if day not in wanted or r.get(key) is None:
+                continue
+            a = acc.setdefault(r.get(key), {"unique_payment_attempts": 0, "successful_payments": 0, "failed_payment_attempts": 0, key: r.get(key)})
+            for m in ("unique_payment_attempts", "successful_payments", "failed_payment_attempts"):
+                a[m] += _i(r.get(m))
+        return sorted(acc.values(), key=lambda x: -x["unique_payment_attempts"])
+
+    seen_days = sorted({str(r.get("day") or "")[:10] for r in out["method"] or [] if r.get("day") and _i(r.get("unique_payment_attempts"))})
+    latest_day = seen_days[-1] if seen_days else None
+    out["method"] = summed(out["method"], "payment_method")
+    if out.get("wallet") is not None:
+        out["wallet"] = summed(out["wallet"], "payment_card_wallet")
 
     def rows(raw, key):
         res = []
@@ -102,7 +130,11 @@ def _payments(store: models.Store, cur_w: str) -> tuple[dict | None, str | None]
         "successful": ok,
         "failed_attempts": failed,
         "authorization_rate": round(ok / uniq * 100, 1) if uniq else None,
-    }, None
+        "latest_day_with_data": latest_day,
+    }, (None if uniq else (
+        f"Shopify has no payment attempts for this period yet (latest day with payment data: {latest_day})."
+        if latest_day else "Shopify returned no payment attempts for this period."
+    ))
 
 
 def _orders(db: Session, store: models.Store, first, last):
@@ -193,7 +225,7 @@ def fetch_cart_extras(db: Session, store: models.Store, days: int = 28, threshol
     if cached and cached[0] > time.time():
         payments, pay_err = cached[1]
     else:
-        payments, pay_err = _payments(store, _since(first, last))
+        payments, pay_err = _payments(store, first, last)
         if payments is not None:
             ttl = 120 if period == "today" else CACHE_SECONDS
             _cache[key] = (time.time() + ttl, (payments, pay_err))
