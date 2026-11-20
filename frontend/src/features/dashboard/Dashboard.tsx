@@ -367,7 +367,7 @@ function Dashboard() {
                     />
                 )}
 
-                <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-[#111c32] text-white transition-transform lg:static lg:translate-x-0 ${mobileMenu ? "translate-x-0" : "-translate-x-full"}`}>
+                <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col bg-[#111c32] text-white transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${mobileMenu ? "translate-x-0" : "-translate-x-full"}`}>
                     <div className="flex h-20 items-center justify-between border-b border-white/10 px-6">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500">
@@ -383,7 +383,7 @@ function Dashboard() {
                         </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto px-5 pt-8">
+                    <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-8">
                         {navGroups.map((group) => (
                         <div key={group.label} className="mb-6">
                         <p className="mb-3 text-[10px] font-semibold uppercase tracking-[2px] text-slate-500">{group.label}</p>
@@ -415,7 +415,8 @@ function Dashboard() {
                         ))}
                     </div>
 
-                    <div className="p-5">
+                    {/* Hidden on short screens so the menu above always has room. */}
+                    <div className="p-5 [@media(max-height:860px)]:hidden">
                         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                             <div className="mb-3 flex items-center gap-2 text-blue-300">
                                 <ShieldCheck size={18} />
