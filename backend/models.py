@@ -103,6 +103,23 @@ class ChangeLogEntry(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class RecommendationStatus(Base):
+    """
+    Manager checklist section 8, P2: each recommendation ends in an action and
+    has a status. Recommendations are rebuilt from live data every time, so
+    the team's status (in progress / done / ignored) is saved here by the
+    recommendation's stable key, e.g. "landing_fix:/products/xyz".
+    """
+    __tablename__ = "recommendation_status"
+    __table_args__ = (UniqueConstraint("store_id", "rec_key", name="ux_rec_status_store_key"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    rec_key = Column(String(300), nullable=False)
+    status = Column(String(20), nullable=False, default="open")  # open, in_progress, done, ignored
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class AlertHistory(Base):
     __tablename__ = "alert_history"
 

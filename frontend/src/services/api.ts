@@ -166,13 +166,38 @@ export type FunnelTrendDay = Funnel & {
   checkout_abandonment_rate: number | null;
 };
 
+export type RecAction = "fix" | "promote" | "test";
+export type RecStatus = "open" | "in_progress" | "done" | "ignored";
+export type RecRange = "yesterday" | 7 | 30;
+
 export type Recommendation = {
+  key: string;
+  rank: number;
+  kind: string;
+  action: RecAction;
   title: string;
-  explanation: string;
-  evidence: string;
-  priority: "High" | "Medium" | "Low";
-  suggested_action: string;
-  affected_metric: string;
+  page: string;
+  segment: string;
+  evidence: string[];
+  impact: number | null;
+  impact_formula: string;
+  effort: "Low" | "Medium" | "High";
+  status: RecStatus;
+  status_updated_at: string | null;
+};
+
+export type Recommendations = {
+  days: number;
+  period: string;
+  window_label: string;
+  compare_label: string;
+  store_conversion_rate: number | null;
+  sessions: number;
+  aov: number | null;
+  orders: number;
+  total_impact: number;
+  recommendations: Recommendation[];
+  errors: string[];
 };
 
 export type Benchmark = { value: number; label: string; source: string };
@@ -578,7 +603,14 @@ export const api = {
   productAnalytics: (days = 28) => request<ProductAnalyticsData>(`/dashboard/product-analytics?days=${days}`),
   productPerformance: (days = 30) =>
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
-  recommendations: () => request<{ recommendations: Recommendation[] }>("/dashboard/recommendations"),
+  recommendations: (range: RecRange = 30) =>
+    request<Recommendations>(`/dashboard/recommendations?${range === "yesterday" ? "period=yesterday" : `days=${range}`}`),
+  setRecommendationStatus: (key: string, status: RecStatus) =>
+    request<{ key: string; status: RecStatus }>("/dashboard/recommendations/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, status }),
+    }),
   benchmarks: () => request<Benchmarks>("/dashboard/benchmarks"),
   orderHealth: (range: OrderHealthRange = 30) =>
     request<OrderHealth>(`/dashboard/order-health?${typeof range === "number" ? `days=${range}` : `period=${range}`}`),

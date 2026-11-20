@@ -25,7 +25,7 @@ from cvr_alarm import check_cvr_alarm, CVR_RULE_TITLE
 from dependencies import get_db
 from funnel import fetch_funnel, fetch_funnel_compare, fetch_funnel_trend
 from quilt_alarm import check_quilt_alarm, RULE_TITLE as QUILT_RULE_TITLE
-from recommendations import build_recommendations
+from recommendations import build_recommendations, set_status as set_recommendation_status, STATUSES as REC_STATUSES
 from benchmarks import get_benchmarks
 from order_health import fetch_order_health
 from product_groups import fetch_product_analytics
@@ -611,10 +611,34 @@ def funnel_trend(
 # CRO Recommendations
 # ---------------------------------------------------------------------------
 
-@router.get("/recommendations")
-def recommendations(shop: str | None = Query(None), db: Session = Depends(get_db)):
+class RecommendationStatusIn(BaseModel):
+    key: str
+    status: str
+
+
+@router.post("/recommendations/status")
+def recommendation_status(body: RecommendationStatusIn, shop: str | None = Query(None), db: Session = Depends(get_db)):
+    """Save the team's status for one recommendation (open / in_progress / done / ignored)."""
+    if body.status not in REC_STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {', '.join(REC_STATUSES)}")
     store = _get_store(db, shop)
-    return {"recommendations": build_recommendations(db, store)}
+    return set_recommendation_status(db, store, body.key, body.status)
+
+
+@router.get("/recommendations")
+def recommendations(
+    days: int = Query(30, ge=7, le=60),
+    period: str | None = Query(None, pattern="^yesterday$"),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """One list of recommendations from every page, ranked by estimated impact (checklist section 8)."""
+    store = _get_store(db, shop)
+    try:
+        return build_recommendations(db, store, days=days, period=period)
+    except Exception as exc:
+        logger.exception("Recommendations failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 
 # ---------------------------------------------------------------------------
