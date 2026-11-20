@@ -195,7 +195,7 @@ function LandingPages() {
             <div className="rounded-2xl border bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">Landing pages with visits</p>
               <p className="mt-2 text-2xl font-bold text-slate-900">{data.pages.length.toLocaleString()}</p>
-              <p className="mt-1 text-xs text-slate-400">{data.pages.filter((p) => !p.too_few_sessions).length} with {minSessions}+ sessions</p>
+              <p className="cro-note mt-1 text-xs text-slate-400">{data.pages.filter((p) => !p.too_few_sessions).length} with {minSessions}+ sessions</p>
             </div>
             <button
               onClick={() => setFlaggedOnly((v) => !v)}
@@ -205,14 +205,14 @@ function LandingPages() {
                 <AlertTriangle size={14} className="text-red-500" /> Bounce worse than usual
               </p>
               <p className={`mt-2 text-2xl font-bold ${flaggedCount ? "text-red-600" : "text-slate-900"}`}>{flaggedCount}</p>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="cro-note mt-1 text-xs text-slate-400">
                 pages {data.bounce_flag_pts}+ pts above their own previous period · {flaggedOnly ? "showing only these" : "click to show only these"}
               </p>
             </button>
             <div className="rounded-2xl border bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">Top landing page</p>
               <p className="mt-2 truncate text-lg font-bold text-slate-900" title={data.pages[0]?.path}>{data.pages[0]?.path ?? "—"}</p>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="cro-note mt-1 text-xs text-slate-400">
                 {data.pages[0] ? `${data.pages[0].sessions.toLocaleString()} sessions · bounce ${pct(data.pages[0].bounce_rate)}` : ""}
               </p>
             </div>
@@ -254,7 +254,7 @@ function LandingPages() {
                 </select>
               </div>
             </div>
-            <p className="mb-3 text-xs text-slate-500">{data.revenue_note}</p>
+            <p className="cro-note mb-3 text-xs text-slate-500">{data.revenue_note}</p>
             {rows.length === 0 ? (
               <p className="text-xs text-slate-400">No pages match.</p>
             ) : (

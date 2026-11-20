@@ -118,7 +118,7 @@ function DeviceFunnelBars({ data, device, error }: { data: DeviceFunnel | null; 
                     </div>
                 </div>
             ))}
-            <p className="pt-1 text-[11px] text-slate-400">
+            <p className="cro-note pt-1 text-[11px] text-slate-400">
                 {device}: {Math.round((d.sessions / (all || 1)) * 100)}% of all visits · conversion {Math.round((d.completed_checkout / d.sessions) * 10000) / 100}% · {data.window_label}
             </p>
         </div>
@@ -841,9 +841,8 @@ function Dashboard() {
                                     };
 
                                     const renderChange = (m: typeof revenueMetric, absUnit: string, money = false) => {
-                                        if (!m) return { text: loading ? "Loading…" : "—", tone: "slate", showArrow: false };
-                                        if (m.too_early) return { text: "Too early to compare", tone: "slate", showArrow: false };
-                                        if (m.baseline_value === null) return { text: "No history yet", tone: "slate", showArrow: false };
+                                        // Only a real change gets a chip (user asked for no small notes).
+                                        if (!m || m.too_early || m.baseline_value === null) return { text: "", tone: "slate", showArrow: false };
                                         const text = money
                                             ? moneyChangeBothWays(m.change_abs, m.change_pct, currency)
                                             : changeBothWays(m.change_abs, m.change_pct, absUnit);
@@ -881,7 +880,7 @@ function Dashboard() {
                                             value: loading ? "…" : String(summary?.today.quilt_orders ?? "—"),
                                             // Quilt volume (a handful a day) is always below the ~20-order
                                             // threshold, so a % change here would be noise.
-                                            change: { text: summary ? "Too early to compare" : "—", tone: "slate", showArrow: false },
+                                            change: { text: "", tone: "slate", showArrow: false },
                                             icon: ShoppingBag, color: "blue",
                                             note: summary ? `Yesterday: ${summary.yesterday.quilt_orders} quilt orders (store time)` : "Loading…",
                                         },
@@ -940,7 +939,7 @@ function Dashboard() {
                                                     )}
                                                 </div>
                                                 {item.spark && <Sparkline values={item.spark} color="#ffffff" />}
-                                                <p className="relative mt-2 text-xs text-white/80">{item.note}</p>
+                                                <p className="cro-note relative mt-2 text-xs text-white/80">{item.note}</p>
                                             </div>
                                         );
                                     });
@@ -1003,10 +1002,10 @@ function Dashboard() {
                                         <p className="mb-2 text-xs text-slate-400">{loading ? "Loading…" : "No sales data available for this period."}</p>
                                     )}
                                     {historyStartLabel && (!salesCurrentComplete || !salesPrevComplete) && (
-                                        <p className="mb-2 text-xs text-amber-600">Order history in this app starts {historyStartLabel}; earlier days are blank, not $0.</p>
+                                        <p className="cro-note mb-2 text-xs text-amber-600">Order history in this app starts {historyStartLabel}; earlier days are blank, not $0.</p>
                                     )}
                                     <SalesOverTimeChart rows={salesChartData} markers={salesMarkers} currency={currency} mode={salesMode} />
-                                    <p className="text-[11px] text-slate-400">Drag the slider (or scroll inside the chart) to zoom into a few days.</p>
+                                    <p className="cro-note text-[11px] text-slate-400">Drag the slider (or scroll inside the chart) to zoom into a few days.</p>
                                     <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
                                         <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 bg-blue-600" /> {salesCurRange}</span>
                                         <span className="flex items-center gap-1.5"><span className="inline-block w-5 border-t-2 border-dashed border-slate-400" /> {salesPrevRange} (same weekday, one period earlier)</span>
@@ -1050,15 +1049,15 @@ function Dashboard() {
                                         </div>
                                     )}
                                     {salesBreakdown?.too_early && (
-                                        <p className="mt-3 text-xs text-slate-400">Too early to compare - below the usual order threshold for this period.</p>
+                                        <p className="cro-note mt-3 text-xs text-slate-400">Too early to compare - below the usual order threshold for this period.</p>
                                     )}
                                     {salesBreakdown && !salesBreakdown.too_early && salesBreakdown.rows.every((r) => r.baseline_value === null) && (
-                                        <p className="mt-3 text-xs text-slate-400">No comparison yet - not enough order history for {salesBreakdown.rows[0]?.baseline_label.replace(/^vs /, "the ")}.</p>
+                                        <p className="cro-note mt-3 text-xs text-slate-400">No comparison yet - not enough order history for {salesBreakdown.rows[0]?.baseline_label.replace(/^vs /, "the ")}.</p>
                                     )}
                                     {salesBreakdown && !salesBreakdown.too_early && salesBreakdown.rows[0]?.baseline_value !== null && (
-                                        <p className="mt-3 text-xs text-slate-400">Changes are {salesBreakdown.rows[0]?.baseline_label}.</p>
+                                        <p className="cro-note mt-3 text-xs text-slate-400">Changes are {salesBreakdown.rows[0]?.baseline_label}.</p>
                                     )}
-                                    <p className="mt-3 text-xs text-slate-400">{salesBreakdown?.note}</p>
+                                    <p className="cro-note mt-3 text-xs text-slate-400">{salesBreakdown?.note}</p>
                                 </section>
                             </div>
 
@@ -1094,7 +1093,7 @@ function Dashboard() {
                                     <div>
                                         <p className="text-xs text-slate-500">Average per day</p>
                                         <p className="text-2xl font-bold text-slate-900">{dailyAvg !== null ? formatMoney(dailyAvg, currency) : "—"}</p>
-                                        <p className="text-[11px] text-slate-400">complete days only</p>
+                                        <p className="cro-note text-[11px] text-slate-400">complete days only</p>
                                     </div>
                                     <div>
                                         <p className="text-xs text-slate-500">Best day</p>
@@ -1106,7 +1105,7 @@ function Dashboard() {
                                     <p className="mb-2 text-xs text-slate-400">{dailyLoading ? "Loading…" : "No sales data available for this period."}</p>
                                 )}
                                 {dailyRows.some((d) => d.revenue === null) && dailySales?.history_start && (
-                                    <p className="mb-2 text-xs text-amber-600">Order history in this app starts {dailyNice(dailySales.history_start)}; earlier days are blank, not $0.</p>
+                                    <p className="cro-note mb-2 text-xs text-amber-600">Order history in this app starts {dailyNice(dailySales.history_start)}; earlier days are blank, not $0.</p>
                                 )}
                                 <div className="h-64 w-full">
                                     <ResponsiveContainer width="100%" height="100%">
@@ -1210,7 +1209,7 @@ function Dashboard() {
                                             </ComposedChart>
                                         </ResponsiveContainer>
                                     </div>
-                                    <p className="mt-2 text-xs text-slate-400">Solid line with dots: last {periodDays} days · dashed: the {periodDays} days before</p>
+                                    <p className="cro-note mt-2 text-xs text-slate-400">Solid line with dots: last {periodDays} days · dashed: the {periodDays} days before</p>
                                     {chartMarkers.length > 0 && (
                                         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                                             {chartMarkers.map((m) => (
@@ -1369,7 +1368,7 @@ function Dashboard() {
                                             <div key={s.label} className="rounded-xl border border-slate-100 p-4">
                                                 <p className="text-xs text-slate-500">{s.label}</p>
                                                 <p className={`mt-1 text-xl font-bold ${s.text}`}>{s.data.pct}%</p>
-                                                <p className="text-xs text-slate-400">{s.data.count} of {orderHealth.total_orders} orders</p>
+                                                <p className="cro-note text-xs text-slate-400">{s.data.count} of {orderHealth.total_orders} orders</p>
                                                 <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
                                                     <div className={`h-full rounded-full ${s.color}`} style={{ width: `${Math.max(s.data.pct, 2)}%` }} />
                                                 </div>
@@ -1377,7 +1376,7 @@ function Dashboard() {
                                         ))}
                                     </div>
                                 )}
-                                <p className="mt-4 text-xs text-slate-400">
+                                <p className="cro-note mt-4 text-xs text-slate-400">
                                     A rising refund or cancellation rate is often an early sign of checkout friction, payment issues, or a stock/fulfillment problem.
                                 </p>
                             </section>
@@ -1407,7 +1406,7 @@ function Dashboard() {
                                 <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
                                     <div className="min-w-0 flex-1">
                                         <p className="text-sm font-semibold text-slate-800">Daily numbers email</p>
-                                        <p className="mt-1 text-xs text-slate-500">
+                                        <p className="cro-note mt-1 text-xs text-slate-500">
                                             Sent automatically every day at 11:00 AM IST with yesterday's numbers. Use the button to send one now and check it arrives.
                                         </p>
                                         {testEmail && (

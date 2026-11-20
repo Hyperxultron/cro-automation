@@ -137,7 +137,7 @@ function SegmentTable({ title, data, loading, currency }: { title: string; data:
           </table>
         </div>
       )}
-      {data?.revenue_note && <p className="mt-3 text-xs text-slate-400">{data.revenue_note}</p>}
+      {data?.revenue_note && <p className="cro-note mt-3 text-xs text-slate-400">{data.revenue_note}</p>}
     </section>
   );
 }
@@ -286,7 +286,7 @@ function ConversionAnalytics() {
               </>
             )}
           </h2>
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="cro-note mt-1 text-xs text-slate-400">
             {yesterdayRow ? `Base: ~${yesterdayRow.sessions.toLocaleString()} sessions yesterday` : "—"}
           </p>
         </div>

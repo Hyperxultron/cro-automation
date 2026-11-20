@@ -178,13 +178,13 @@ export function BuyHeatmapCard() {
     return (
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
             <h3 className="font-bold text-slate-900">When do people buy?<InfoTip text="Conversion rate (orders ÷ visits, bots excluded) for each weekday and hour, store time, over the last 28 complete days. Darker = more of the visitors in that hour bought. Grey = fewer than 20 visits, too few to judge. Drag the handles on the colour scale to spotlight hours." /></h3>
-            <p className="mt-1 text-xs text-slate-500">{data?.window_label ?? (err ? "" : "Loading…")}</p>
+            <p className="mt-1 text-xs text-slate-500">{data ? `${byOrders ? "Orders by hour · " : ""}${data.window_label}` : err ? "" : "Loading…"}</p>
             {byOrders && best && best.orders > 0 && (
                 <p className="mt-2 text-sm text-slate-600">
                     Busiest hour: <b className="text-slate-900">{data?.weekdays[best.weekday]} around {best.hour}:00</b> ({best.orders} orders over {data?.days} days).
                 </p>
             )}
-            {byOrders && data?.note && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.note}</p>}
+            {byOrders && data?.note && <p className="cro-note mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.note}</p>}
             {!byOrders && best && data?.average_cvr != null && (
                 <p className="mt-2 text-sm text-slate-600">
                     Best hour: <b className="text-slate-900">{data.weekdays[best.weekday]} around {best.hour}:00</b> ({best.cvr}% vs {data.average_cvr}% average).

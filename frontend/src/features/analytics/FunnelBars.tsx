@@ -46,7 +46,7 @@ function FunnelBars({ data, loading, compact = false }: { data: FunnelCompare | 
                     </div>
                 );
             })}
-            <p className="pt-1 text-[11px] text-slate-400">
+            <p className="cro-note pt-1 text-[11px] text-slate-400">
                 {data.too_early
                     ? "Too early to compare - fewer than ~500 sessions in this period."
                     : `Step changes are ${data.compare_label}${compact ? "" : "; grey bars show that period"}.`}

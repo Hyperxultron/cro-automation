@@ -58,7 +58,7 @@ function CartCheckoutAnalytics() {
           <h2 className="mt-2 text-2xl font-bold text-slate-900">
             {loading ? "…" : cartAbandon != null ? `${cartAbandon}%` : "—"}
           </h2>
-          <p className="mt-1 text-xs text-slate-400">of sessions that added to cart but never purchased</p>
+          <p className="cro-note mt-1 text-xs text-slate-400">of sessions that added to cart but never purchased</p>
           {benchmarks && cartAbandon != null && (
             <p className="mt-2 text-xs">
               <span
@@ -77,7 +77,7 @@ function CartCheckoutAnalytics() {
           <h2 className="mt-2 text-2xl font-bold text-slate-900">
             {loading ? "…" : checkoutAbandon != null ? `${checkoutAbandon}%` : "—"}
           </h2>
-          <p className="mt-1 text-xs text-slate-400">of sessions that reached checkout but never purchased</p>
+          <p className="cro-note mt-1 text-xs text-slate-400">of sessions that reached checkout but never purchased</p>
           {benchmarks && checkoutAbandon != null && (
             <p className="mt-2 text-xs">
               <span
@@ -93,7 +93,7 @@ function CartCheckoutAnalytics() {
         </div>
       </div>
       {benchmarks && (
-        <p className="text-xs text-slate-400">
+        <p className="cro-note text-xs text-slate-400">
           Industry averages: {benchmarks.cart_abandonment_rate.source}.
         </p>
       )}

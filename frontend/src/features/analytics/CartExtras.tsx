@@ -132,17 +132,17 @@ function CartExtras() {
               <div className="rounded-xl border p-4">
                 <p className="text-xs text-slate-500">Payment success rate</p>
                 <p className="mt-2 text-2xl font-bold text-slate-900">{p.authorization_rate == null ? "—" : `${p.authorization_rate}%`}</p>
-                <p className="mt-1 text-xs text-slate-400">{p.successful.toLocaleString()} of {p.attempts.toLocaleString()} purchase attempts</p>
+                <p className="cro-note mt-1 text-xs text-slate-400">{p.successful.toLocaleString()} of {p.attempts.toLocaleString()} purchase attempts</p>
               </div>
               <div className="rounded-xl border p-4">
                 <p className="text-xs text-slate-500">Failed payment attempts</p>
                 <p className="mt-2 text-2xl font-bold text-slate-900">{p.failed_attempts.toLocaleString()}</p>
-                <p className="mt-1 text-xs text-slate-400">includes retries by the same customer</p>
+                <p className="cro-note mt-1 text-xs text-slate-400">includes retries by the same customer</p>
               </div>
               <div className="rounded-xl border p-4">
                 <p className="text-xs text-slate-500">Most used method</p>
                 <p className="mt-2 text-2xl font-bold capitalize text-slate-900">{p.methods[0]?.label ?? "—"}</p>
-                <p className="mt-1 text-xs text-slate-400">{p.methods[0]?.share_of_payments ?? "—"}% of successful payments</p>
+                <p className="cro-note mt-1 text-xs text-slate-400">{p.methods[0]?.share_of_payments ?? "—"}% of successful payments</p>
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -184,12 +184,12 @@ function CartExtras() {
           <div className="rounded-xl border p-4">
             <p className="text-xs text-slate-500">Average / median order</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">{ov.average == null ? "—" : formatMoney(ov.average, currency)}</p>
-            <p className="mt-1 text-xs text-slate-400">median {ov.median == null ? "—" : formatMoney(ov.median, currency)} · {ov.orders.toLocaleString()} orders</p>
+            <p className="cro-note mt-1 text-xs text-slate-400">median {ov.median == null ? "—" : formatMoney(ov.median, currency)} · {ov.orders.toLocaleString()} orders</p>
           </div>
           <div className={`rounded-xl border p-4 ${ov.threshold ? "border-amber-200 bg-amber-50" : ""}`}>
             <p className="text-xs text-slate-500">Orders just below free shipping</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">{ov.near_threshold_share == null ? "—" : `${ov.near_threshold_share}%`}</p>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="cro-note mt-1 text-xs text-slate-400">
               {ov.threshold
                 ? `${ov.near_threshold_orders} orders between ${formatMoney(ov.near_threshold_from ?? 0, currency)} and ${formatMoney(ov.threshold, currency)}`
                 : "Enter your free-shipping amount above"}
@@ -198,7 +198,7 @@ function CartExtras() {
           <div className="rounded-xl border p-4">
             <p className="text-xs text-slate-500">Orders that qualified</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">{ov.at_or_above_threshold_share == null ? "—" : `${ov.at_or_above_threshold_share}%`}</p>
-            <p className="mt-1 text-xs text-slate-400">{ov.threshold ? `at or above ${formatMoney(ov.threshold, currency)}` : "—"}</p>
+            <p className="cro-note mt-1 text-xs text-slate-400">{ov.threshold ? `at or above ${formatMoney(ov.threshold, currency)}` : "—"}</p>
           </div>
         </div>
         <div className="h-64 w-full">
@@ -214,7 +214,7 @@ function CartExtras() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="cro-note mt-2 text-xs text-slate-500">
           Order value = subtotal after discounts, before shipping and tax. {ov.threshold ? "Amber bars = orders just below free shipping." : ""}
         </p>
       </section>
@@ -252,7 +252,7 @@ function CartExtras() {
         </div>
       </section>
 
-      <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+      <div className="cro-note flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
         <Info size={15} className="mt-0.5 shrink-0" />
         <div>
           <p className="font-semibold">Not shown yet</p>

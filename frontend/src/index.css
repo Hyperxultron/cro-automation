@@ -236,3 +236,7 @@ html[data-theme="dark"] .recharts-layer [fill="#e2e8f0"],
 html[data-theme="dark"] .recharts-layer [fill="#cbd5e1"],
 html[data-theme="dark"] .recharts-layer [fill="#c7d2fe"] { fill: #1d4466; }
 html[data-theme="dark"] .recharts-tooltip-cursor { fill: #0f2840; }
+
+/* Small helper notes are hidden everywhere (user asked for clean cards).
+   The ⓘ tooltips still explain each number on hover. */
+.cro-note { display: none !important; }

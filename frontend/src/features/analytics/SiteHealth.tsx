@@ -42,10 +42,10 @@ function VitalTile({ metric, vital }: { metric: (typeof METRICS)[number]; vital:
         )}
       </div>
       <p className="mt-3 text-3xl font-bold text-slate-900">{vital.p75 == null ? "—" : metric.fmt(vital.p75)}</p>
-      <p className="mt-1 text-xs text-slate-500">{metric.what} · {metric.limit}</p>
+      <p className="cro-note mt-1 text-xs text-slate-500">{metric.what} · {metric.limit}</p>
       <p className="mt-2 text-xs">{changeText(metric.key, vital.change)}</p>
       {vital.good_share != null && (
-        <p className="mt-1 text-xs text-slate-500">{vital.good_share}% of page loads good · {vital.poor_share}% poor</p>
+        <p className="cro-note mt-1 text-xs text-slate-500">{vital.good_share}% of page loads good · {vital.poor_share}% poor</p>
       )}
     </div>
   );
@@ -143,7 +143,7 @@ function SiteHealth() {
               <Smartphone className="text-blue-500" size={20} />
               <div><h3 className="font-bold text-slate-900">Mobile page speed<InfoTip text={HELP.webVitals} /></h3><p className="text-xs text-slate-400">{data.speed_window_label ?? data.window_label}</p></div>
             </div>
-            {data.speed_note && <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.speed_note}</p>}
+            {data.speed_note && <p className="cro-note mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.speed_note}</p>}
             {!data.cwv_available || !mobile ? (
               <p className="text-xs text-slate-400">Shopify hasn't published page speed data for this period yet (it usually arrives 1-2 days late).</p>
             ) : (
@@ -151,7 +151,7 @@ function SiteHealth() {
                 <div className="grid gap-4 md:grid-cols-3">
                   {METRICS.map((m) => <VitalTile key={m.key} metric={m} vital={mobile[m.key]} />)}
                 </div>
-                <p className="mt-3 text-xs text-slate-500">
+                <p className="cro-note mt-3 text-xs text-slate-500">
                   p75 of {mobile.page_loads.toLocaleString()} mobile page loads: 75% of visits were at least this fast. Lower is better for all three.
                   {desktop && <> Desktop: LCP {desktop.lcp.p75 != null ? `${(desktop.lcp.p75 / 1000).toFixed(2)} s` : "—"} · INP {desktop.inp.p75 ?? "—"} ms · CLS {desktop.cls.p75 ?? "—"}.</>}
                 </p>
@@ -197,7 +197,7 @@ function SiteHealth() {
               <Search className="text-blue-500" size={20} />
               <div><h3 className="font-bold text-slate-900">Site search<InfoTip text={HELP.siteSearch} /></h3><p className="text-xs text-slate-400">{data.search_window_label ?? data.window_label}</p></div>
             </div>
-            {data.search_note && <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.search_note}</p>}
+            {data.search_note && <p className="cro-note mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.search_note}</p>}
             {!s ? (
               <p className="text-xs text-slate-400">Search data isn't available from Shopify for this period.</p>
             ) : (
@@ -206,7 +206,7 @@ function SiteHealth() {
                   <div className="rounded-xl border p-4">
                     <p className="text-xs text-slate-500">Visits that searched</p>
                     <p className="mt-2 text-2xl font-bold text-slate-900">{s.share_of_sessions == null ? "—" : `${s.share_of_sessions}%`}</p>
-                    <p className="mt-1 text-xs text-slate-400">{s.sessions_with_searches.toLocaleString()} sessions</p>
+                    <p className="cro-note mt-1 text-xs text-slate-400">{s.sessions_with_searches.toLocaleString()} sessions</p>
                   </div>
                   <div className="rounded-xl border p-4">
                     <p className="text-xs text-slate-500">Conversion: searchers vs others</p>
@@ -214,17 +214,17 @@ function SiteHealth() {
                       {s.searcher_conversion_rate ?? "—"}%
                       <span className="ml-2 text-base font-semibold text-slate-400">vs {s.non_searcher_conversion_rate ?? "—"}%</span>
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">searchers · everyone else</p>
+                    <p className="cro-note mt-1 text-xs text-slate-400">searchers · everyone else</p>
                   </div>
                   <div className="rounded-xl border p-4">
                     <p className="text-xs text-slate-500">Searchers who clicked a result</p>
                     <p className="mt-2 text-2xl font-bold text-slate-900">{s.search_click_rate}%</p>
-                    <p className="mt-1 text-xs text-slate-400">{s.search_added_to_cart_rate}% added to cart</p>
+                    <p className="cro-note mt-1 text-xs text-slate-400">{s.search_added_to_cart_rate}% added to cart</p>
                   </div>
                   <div className={`rounded-xl border p-4 ${s.zero_result_share != null && s.zero_result_share >= 10 ? "border-red-200 bg-red-50" : ""}`}>
                     <p className="text-xs text-slate-500">Searches with no results</p>
                     <p className="mt-2 text-2xl font-bold text-slate-900">{s.zero_result_share == null ? "—" : `${s.zero_result_share}%`}</p>
-                    <p className="mt-1 text-xs text-slate-400">{s.zero_result_searches?.toLocaleString() ?? "—"} of {s.searches?.toLocaleString() ?? "—"} searches</p>
+                    <p className="cro-note mt-1 text-xs text-slate-400">{s.zero_result_searches?.toLocaleString() ?? "—"} of {s.searches?.toLocaleString() ?? "—"} searches</p>
                   </div>
                 </div>
                 <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -277,7 +277,7 @@ function SiteHealth() {
             )}
           </section>
 
-          <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+          <div className="cro-note flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
             <Info size={15} className="mt-0.5 shrink-0" />
             <div>
               <p className="font-semibold">Not shown yet</p>
