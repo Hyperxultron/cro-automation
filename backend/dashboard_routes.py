@@ -33,6 +33,7 @@ from landing import fetch_landing_pages
 from site_health import fetch_site_health
 from cart_extras import fetch_cart_extras
 from overview import fetch_overview
+from shopify_sync import ensure_fresh_orders
 from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
 from change_log import list_change_log, create_change_log_entry, delete_change_log_entry, VALID_AREAS
@@ -620,6 +621,8 @@ def overview(
     db: Session = Depends(get_db),
 ):
     store = _get_store(db, shop)
+    # Pull the latest orders first if our copy is stale (backend was asleep).
+    ensure_fresh_orders(db, store)
     return fetch_overview(db, store, period=period, compare=compare)
 
 

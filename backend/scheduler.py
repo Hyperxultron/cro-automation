@@ -50,6 +50,10 @@ def run_once() -> dict:
     db = SessionLocal()
     try:
         backfill = time.time() - _last_backfill_at >= BACKFILL_EVERY_SECONDS
+        if backfill:
+            # Recent orders first (a few seconds), so today's numbers are right
+            # straight after a wake-up; the slow 60-day backfill comes after.
+            sync_store(db, SHOP, days=2)
         result = sync_store(db, SHOP, days=BACKFILL_DAYS if backfill else 2)
         if backfill and result.get("status") == "success":
             _last_backfill_at = time.time()

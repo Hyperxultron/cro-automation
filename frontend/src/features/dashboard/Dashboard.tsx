@@ -604,6 +604,15 @@ function Dashboard() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    <div className="rounded-lg bg-blue-50 p-2 text-blue-600"><RefreshCw size={16} /></div>
+                                    <div>
+                                        <p className="text-xs text-slate-400">Orders copied from Shopify</p>
+                                        <p className="text-sm font-semibold text-slate-800">
+                                            {overview?.health.last_synced_at ? timeAgo(overview.health.last_synced_at) : loading ? "Loading…" : "Not yet"}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
                                     <div className="rounded-lg bg-slate-100 p-2 text-slate-400"><Gauge size={16} /></div>
                                     <div>
                                         <p className="text-xs text-slate-400">Mobile page speed</p>
@@ -619,6 +628,11 @@ function Dashboard() {
                                     Could not load live data: {error}
                                 </div>
                             )}
+                            {overview?.warnings?.map((w) => (
+                                <div key={w} className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                                    {w}
+                                </div>
+                            ))}
                             {(quiltAlert || cvrAlert) && (
                                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
                                     {quiltAlert && <p>⚠ No quilt order for {quilt?.hours_elapsed} hours (limit {quilt?.threshold_hours}h). Last: {quilt?.last_quilt_order_number}</p>}

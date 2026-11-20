@@ -255,6 +255,32 @@ def sync_store(db: Session, shop: str, days: int = 30) -> dict:
         _release_sync_lock(lock)
 
 
+FRESH_MINUTES = 20
+
+
+def ensure_fresh_orders(db: Session, store: models.Store, max_age_minutes: int = FRESH_MINUTES) -> dict:
+    """
+    Quick 2-day order sync when our copy is older than max_age_minutes.
+
+    Why: on Render's free plan the backend sleeps when nobody uses it, so the
+    15-minute scheduler stops and "today so far" showed only the orders synced
+    before it fell asleep (19 Nov: 13 orders vs 60+ in Shopify). Opening the
+    dashboard now pulls the latest orders first. Read-only towards Shopify.
+    """
+    last = store.last_synced_at
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    if last and datetime.now(timezone.utc) - last < timedelta(minutes=max_age_minutes):
+        return {"status": "fresh"}
+    try:
+        result = sync_store(db, store.store_url, days=2)
+        db.refresh(store)
+        return {"status": result.get("status", "unknown"), "reason": result.get("reason")}
+    except Exception as exc:
+        db.rollback()
+        return {"status": "error", "reason": str(exc)[:300]}
+
+
 def _sync_store(db: Session, shop: str, days: int = 30) -> dict:
     try:
         store = get_or_create_store(db, shop)

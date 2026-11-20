@@ -274,8 +274,18 @@ def fetch_overview(
         .filter(models.Order.store_id == store.id, models.Order.shopify_order_id.isnot(None))
         .scalar()
     )
+    synced = store.last_synced_at
+    if synced is not None and synced.tzinfo is None:
+        synced = synced.replace(tzinfo=dt_tz.utc)
+    if synced is None or datetime.now(dt_tz.utc) - synced > timedelta(minutes=30):
+        when = synced.astimezone(tz).strftime("%d %b %H:%M") if synced else "never"
+        warnings.append(
+            f"Orders were last copied from Shopify at {when} (store time), so the newest orders may be missing. "
+            "Refresh in a minute."
+        )
     health = {
         "last_order_at": last_order.isoformat() if last_order else None,
+        "last_synced_at": synced.isoformat() if synced else None,
         # Mobile page speed / Core Web Vitals needs a new data source (not yet
         # wired up - see the manager's "Site health" section). Reported as
         # unavailable rather than faked.

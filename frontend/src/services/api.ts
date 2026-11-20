@@ -209,6 +209,7 @@ export type Overview = {
   };
   health: {
     last_order_at: string | null;
+    last_synced_at?: string | null;
     mobile_page_speed: number | null;
     mobile_page_speed_status: "not_available" | "ok";
   };
