@@ -30,8 +30,9 @@ function BounceBar({ value }: { value: number | null }) {
   );
 }
 
-function SplitTable({ title, help, icon, rows, minSessions, showShare = false }: {
+function SplitTable({ title, help, icon, rows, minSessions, period, showShare = false }: {
   title: string;
+  period: string;
   help: string;
   icon: ReactNode;
   rows: LandingSplitRow[];
@@ -40,9 +41,12 @@ function SplitTable({ title, help, icon, rows, minSessions, showShare = false }:
 }) {
   return (
     <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex items-start gap-2">
         {icon}
-        <h3 className="font-bold text-slate-900">{title}<InfoTip text={help} /></h3>
+        <div>
+          <h3 className="font-bold text-slate-900">{title}<InfoTip text={help} /></h3>
+          <p className="mt-0.5 text-xs text-slate-400">{period}</p>
+        </div>
       </div>
       {rows.length === 0 ? (
         <p className="text-xs text-slate-400">No session data for this period.</p>
@@ -123,6 +127,7 @@ function LandingPages() {
   const pickDays = (d: LandingRange) => {
     if (d === days) return;
     setLoading(true);
+    setData(null); // never show the old range's numbers under the new button
     setDays(d);
   };
 
@@ -174,10 +179,18 @@ function LandingPages() {
         </div>
       )}
 
-      {loading && !data && <p className="text-sm text-slate-400">Loading landing pages from Shopify…</p>}
+      {loading && !data && (
+        <p className="text-sm text-slate-400">
+          Loading {RANGES.find((r) => r.key === days)?.label ?? ""} from Shopify…
+        </p>
+      )}
 
       {data && (
         <>
+          <div className="rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm text-slate-700">
+            <b className="text-blue-700">Showing: {data.window_label}</b>
+            <span className="text-slate-500"> · changes (pts) are vs {data.compare_label}</span>
+          </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl border bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">Landing pages with visits</p>
@@ -205,16 +218,19 @@ function LandingPages() {
             </div>
           </div>
 
-          <SplitTable title="By page type" help={HELP.pageTypes} icon={<Route className="text-blue-500" size={20} />} rows={data.page_types} minSessions={minSessions} showShare />
+          <SplitTable title="By page type" help={HELP.pageTypes} icon={<Route className="text-blue-500" size={20} />} rows={data.page_types} minSessions={minSessions} period={data.window_label} showShare />
 
           <div className="grid gap-6 xl:grid-cols-2">
-            <SplitTable title="Bounce by traffic source" help={HELP.bounceBySource} icon={<Share2 className="text-blue-500" size={20} />} rows={data.by_source} minSessions={minSessions} />
-            <SplitTable title="Bounce by device" help={HELP.bounceByDevice} icon={<MonitorSmartphone className="text-blue-500" size={20} />} rows={data.by_device} minSessions={minSessions} />
+            <SplitTable title="Bounce by traffic source" help={HELP.bounceBySource} icon={<Share2 className="text-blue-500" size={20} />} rows={data.by_source} minSessions={minSessions} period={data.window_label} />
+            <SplitTable title="Bounce by device" help={HELP.bounceByDevice} icon={<MonitorSmartphone className="text-blue-500" size={20} />} rows={data.by_device} minSessions={minSessions} period={data.window_label} />
           </div>
 
           <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <h3 className="font-bold text-slate-900">Landing pages<InfoTip text={HELP.landingPages} /></h3>
+              <div>
+                <h3 className="font-bold text-slate-900">Landing pages<InfoTip text={HELP.landingPages} /></h3>
+                <p className="mt-0.5 text-xs text-slate-400">{data.window_label}</p>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
                   <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />

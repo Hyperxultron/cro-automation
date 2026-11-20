@@ -289,5 +289,5 @@ def fetch_landing_pages(store: models.Store, days: int = 28, period: str | None 
                             _rate_rows(results.get("devices_prev") or [], "session_device_type"), min_s),
         "errors": errors,
     }
-    _cache[key] = (time.time() + (300 if period == "today" else CACHE_SECONDS), result)
+    _cache[key] = (time.time() + (120 if period == "today" else CACHE_SECONDS), result)
     return result

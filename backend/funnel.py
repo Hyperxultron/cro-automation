@@ -357,7 +357,7 @@ def _today_funnel(store: models.Store):
             prev["product_views"] = None
 
     result = (cur, prev, pv_available, now)
-    _cache[key] = (time.time() + 300, result)  # live view: 5 minute cache
+    _cache[key] = (time.time() + 120, result)  # live view: 2 minute cache
     return result
 
 
