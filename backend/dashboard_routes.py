@@ -36,6 +36,7 @@ from overview import fetch_overview
 from shopify_sync import ensure_fresh_orders
 from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
+from experiments import METRICS as EXPERIMENT_METRICS, delete_experiment, list_experiments, save_experiment
 from change_log import list_change_log, create_change_log_entry, delete_change_log_entry, VALID_AREAS
 from shopify_sync import sync_store
 
@@ -823,3 +824,56 @@ def remove_change_log(
     if not ok:
         raise HTTPException(status_code=404, detail="Change log entry not found")
     return {"deleted": entry_id}
+
+
+# ---------------------------------------------------------------------------
+# Experiment log (manager checklist, section 8 P3). The team saves the plan;
+# result and confidence are worked out from Shopify on every read.
+# ---------------------------------------------------------------------------
+
+class ExperimentIn(BaseModel):
+    name: str
+    hypothesis: str
+    metric: str
+    start_date: date
+    end_date: date | None = None
+    page_path: str | None = None
+    owner: str | None = None
+    rec_key: str | None = None
+
+
+@router.get("/experiments")
+def experiments(shop: str | None = Query(None), db: Session = Depends(get_db)):
+    store = _get_store(db, shop)
+    return {
+        "metrics": [{"key": k, **v} for k, v in EXPERIMENT_METRICS.items()],
+        "experiments": list_experiments(db, store),
+    }
+
+
+@router.post("/experiments")
+def create_experiment(body: ExperimentIn, shop: str | None = Query(None), db: Session = Depends(get_db)):
+    store = _get_store(db, shop)
+    try:
+        return save_experiment(db, store, body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.put("/experiments/{exp_id}")
+def update_experiment(exp_id: int, body: ExperimentIn, shop: str | None = Query(None), db: Session = Depends(get_db)):
+    store = _get_store(db, shop)
+    try:
+        return save_experiment(db, store, body.model_dump(), exp_id=exp_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+
+@router.delete("/experiments/{exp_id}")
+def remove_experiment(exp_id: int, shop: str | None = Query(None), db: Session = Depends(get_db)):
+    store = _get_store(db, shop)
+    if not delete_experiment(db, store, exp_id):
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    return {"deleted": exp_id}

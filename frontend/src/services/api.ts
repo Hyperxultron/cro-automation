@@ -186,6 +186,53 @@ export type Recommendation = {
   status_updated_at: string | null;
 };
 
+export type ExperimentMetric = "conversion_rate" | "added_to_cart_rate" | "bounce_rate" | "aov";
+
+export type ExperimentResult = {
+  state: "planned" | "running" | "finished" | "error";
+  verdict: "not_started" | "win" | "loss" | "running" | "no_clear_result" | "too_few" | "better" | "worse" | "flat" | "early" | "no_data" | "error";
+  summary?: string;
+  error?: string;
+  days_measured?: number;
+  before_label?: string;
+  during_label?: string;
+  before?: number | null;
+  during?: number | null;
+  before_n?: number;
+  during_n?: number;
+  n_unit?: "sessions" | "orders";
+  change?: number;
+  change_unit?: "pts" | "%";
+  confidence?: number | null;
+};
+
+export type Experiment = {
+  id: number;
+  name: string;
+  hypothesis: string;
+  metric: ExperimentMetric;
+  metric_label: string;
+  better: "up" | "down";
+  page_path: string | null;
+  start_date: string;
+  end_date: string | null;
+  owner: string | null;
+  rec_key: string | null;
+  created_at: string | null;
+  result: ExperimentResult;
+};
+
+export type ExperimentInput = {
+  name: string;
+  hypothesis: string;
+  metric: ExperimentMetric;
+  start_date: string;
+  end_date: string | null;
+  page_path: string | null;
+  owner: string | null;
+  rec_key: string | null;
+};
+
 export type Recommendations = {
   days: number;
   period: string;
@@ -605,6 +652,17 @@ export const api = {
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
   recommendations: (range: RecRange = 30) =>
     request<Recommendations>(`/dashboard/recommendations?${range === "yesterday" ? "period=yesterday" : `days=${range}`}`),
+  experiments: () =>
+    request<{ metrics: { key: ExperimentMetric; label: string; unit: string; better: "up" | "down" }[]; experiments: Experiment[] }>(
+      "/dashboard/experiments",
+    ),
+  saveExperiment: (body: ExperimentInput, id?: number) =>
+    request<Experiment>(id ? `/dashboard/experiments/${id}` : "/dashboard/experiments", {
+      method: id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  deleteExperiment: (id: number) => request<{ deleted: number }>(`/dashboard/experiments/${id}`, { method: "DELETE" }),
   setRecommendationStatus: (key: string, status: RecStatus) =>
     request<{ key: string; status: RecStatus }>("/dashboard/recommendations/status", {
       method: "POST",

@@ -11,6 +11,7 @@ import SettingsPage from "../settings/Settings";
 import StoreIntegration from "../store/StoreIntegration";
 import { BuyHeatmapCard, SalesOverTimeChart, TrafficSourcesCard } from "./OceanCharts";
 import CroRecommendations from "../recommendations/CroRecommendations";
+import Experiments, { type ExperimentPrefill } from "../experiments/Experiments";
 import ConversionAnalytics from "../analytics/ConversionAnalytics";
 import ProductAnalytics from "../analytics/ProductAnalytics";
 import LandingPages from "../analytics/LandingPages";
@@ -22,7 +23,7 @@ import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
-    Bell, Moon, Sun, Clock3, DollarSign, FileText, Gauge, Globe, History, IndianRupee, LayoutDashboard,
+    Bell, Moon, Sun, Clock3, DollarSign, FileText, FlaskConical, Gauge, Globe, History, IndianRupee, LayoutDashboard,
     Lightbulb, Menu, Package, RefreshCw, Route, Settings, ShieldCheck,
     ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
@@ -184,6 +185,9 @@ function Dashboard() {
     const [ordersTrend, setOrdersTrend] = useState<OrdersTrendDay[]>([]);
     const [funnel, setFunnel] = useState<FunnelCompare | null>(null);
     const [orderHealth, setOrderHealth] = useState<OrderHealth | null>(null);
+    // A recommendation handed to the Experiments page as a pre-filled plan.
+    const [expPrefill, setExpPrefill] = useState<ExperimentPrefill>(null);
+    const clearExpPrefill = useCallback(() => setExpPrefill(null), []);
     // Order Health card: its own Today / Yesterday / 7 / 30 days switch, read live from Shopify.
     const [ohRange, setOhRange] = useState<OrderHealthRange>(30);
     const [ohLoading, setOhLoading] = useState(true);
@@ -422,6 +426,7 @@ function Dashboard() {
             label: "Optimization",
             items: [
                 { name: "Recommendations", icon: Lightbulb },
+                { name: "Experiments", icon: FlaskConical },
                 { name: "Change Log", icon: History },
                 { name: "Alarm Rules", icon: Bell },
                 { name: "Alert History", icon: Activity },
@@ -578,7 +583,17 @@ function Dashboard() {
                         )}
                         {activeNav === "Recommendations" && (
                             <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
-                                <CroRecommendations />
+                                <CroRecommendations
+                                    onExperiment={(p) => {
+                                        setExpPrefill(p);
+                                        setActiveNav("Experiments");
+                                    }}
+                                />
+                            </div>
+                        )}
+                        {activeNav === "Experiments" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <Experiments prefill={expPrefill} onPrefillUsed={clearExpPrefill} />
                             </div>
                         )}
                         {activeNav === "Change Log" && (

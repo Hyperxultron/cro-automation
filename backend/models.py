@@ -120,6 +120,27 @@ class RecommendationStatus(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class Experiment(Base):
+    """
+    Manager checklist section 8, P3: experiment log - hypothesis, start and
+    end dates, metric, result, confidence. The result and confidence are
+    worked out from Shopify (experiments.py), so only the plan is stored.
+    """
+    __tablename__ = "experiments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    hypothesis = Column(Text, nullable=False)
+    metric = Column(String(40), nullable=False)          # conversion_rate, added_to_cart_rate, bounce_rate, aov
+    page_path = Column(String(500), nullable=True)       # one landing page, or empty = whole store
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=True)               # empty = still running
+    owner = Column(String(255), nullable=True)
+    rec_key = Column(String(300), nullable=True)         # the recommendation it came from, if any
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class AlertHistory(Base):
     __tablename__ = "alert_history"
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, FlaskConical, Gauge, Lightbulb, ListChecks, Megaphone, Percent, ShoppingBag, Wrench } from "lucide-react";
+import type { ExperimentPrefill } from "../experiments/Experiments";
 import { api, type RecAction, type RecRange, type RecStatus, type Recommendation, type Recommendations } from "../../services/api";
 
 // Section 8 of the manager's checklist: one list, ranked by estimated impact
@@ -36,11 +37,24 @@ type Filter = "all" | RecAction | "done_ignored";
 const money = (v: number | null | undefined) =>
   v == null ? "—" : `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
-function RecCard({ rec, maxImpact, onStatus, saving }: {
+// A recommendation turned into an experiment plan (Experiments page form).
+function toExperiment(rec: Recommendation): ExperimentPrefill {
+  const page = rec.key.startsWith("landing_") ? rec.key.slice(rec.key.indexOf(":") + 1) : null;
+  return {
+    name: rec.title.slice(0, 120),
+    hypothesis: "",
+    metric: rec.kind === "landing_bounce" ? "bounce_rate" : "conversion_rate",
+    page_path: page,
+    rec_key: rec.key,
+  };
+}
+
+function RecCard({ rec, maxImpact, onStatus, saving, onExperiment }: {
   rec: Recommendation;
   maxImpact: number;
   onStatus: (s: RecStatus) => void;
   saving: boolean;
+  onExperiment?: () => void;
 }) {
   const a = ACTION[rec.action];
   const Icon = a.icon;
@@ -83,6 +97,15 @@ function RecCard({ rec, maxImpact, onStatus, saving }: {
           </ul>
           <p className="mt-2 text-xs text-slate-400">{rec.impact_formula}</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {onExperiment && (
+          <button
+            onClick={onExperiment}
+            className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-100"
+          >
+            <FlaskConical size={13} /> Start experiment
+          </button>
+        )}
         <div className="flex flex-wrap rounded-xl border border-slate-200 bg-slate-50 p-1 text-xs">
           {STATUS.map((s) => (
             <button
@@ -97,12 +120,13 @@ function RecCard({ rec, maxImpact, onStatus, saving }: {
             </button>
           ))}
         </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function CroRecommendations() {
+function CroRecommendations({ onExperiment }: { onExperiment?: (p: ExperimentPrefill) => void }) {
   const [range, setRange] = useState<RecRange>(30);
   const [data, setData] = useState<Recommendations | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -227,7 +251,14 @@ function CroRecommendations() {
 
       <div className="space-y-4">
         {shown.map((rec) => (
-          <RecCard key={rec.key} rec={rec} maxImpact={maxImpact} saving={saving === rec.key} onStatus={(s) => setStatus(rec, s)} />
+          <RecCard
+            key={rec.key}
+            rec={rec}
+            maxImpact={maxImpact}
+            saving={saving === rec.key}
+            onStatus={(s) => setStatus(rec, s)}
+            onExperiment={onExperiment ? () => onExperiment(toExperiment(rec)) : undefined}
+          />
         ))}
       </div>
     </div>
