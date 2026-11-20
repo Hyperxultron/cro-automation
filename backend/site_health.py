@@ -21,7 +21,7 @@ Not available from Shopify (so not shown): JavaScript errors, 404 hits.
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import models
 from landing import _f, _i, _run, _since, period_windows
@@ -92,6 +92,31 @@ def _add_change(cur: dict, prev: dict | None) -> dict:
     return cur
 
 
+def _latest_day_with_data(store: models.Store, dataset: str, metric: str, upto, look_back: int = 10):
+    """
+    Latest store-time day (<= upto) on which Shopify has published `dataset`.
+    Page speed (web_performance) and site search arrive about 1-2 days late,
+    so for Today / Yesterday the asked-for day is often still empty.
+    Returns (date or None, error or None).
+    """
+    since = (upto - timedelta(days=look_back)).isoformat()
+    until = (upto + timedelta(days=1)).isoformat()
+    try:
+        rows = _run(store, f"FROM {dataset} SHOW {metric} TIMESERIES day SINCE {since} UNTIL {until}")
+    except Exception as exc:
+        logger.warning("Latest-day probe for %s failed: %s", dataset, exc)
+        return None, str(exc)[:200]
+    days = sorted(
+        str(r.get("day") or "")[:10] for r in rows or []
+        if r.get("day") and _i(r.get(metric)) > 0 and str(r.get("day"))[:10] <= upto.isoformat()
+    )
+    return (datetime.fromisoformat(days[-1]).date() if days else None), None
+
+
+def _day_label(d) -> str:
+    return d.strftime("%a %d %b")
+
+
 def fetch_site_health(store: models.Store, days: int = 28, period: str | None = None) -> dict:
     period = period if period in ("today", "yesterday") else None
     key = (store.store_url, days, period, datetime.now(_tz(store)).date().isoformat())
@@ -103,26 +128,48 @@ def fetch_site_health(store: models.Store, days: int = 28, period: str | None = 
     cur_w, prev_w = _since(first, last), _since(p_first, p_last)
     mobile = "WHERE device_type = 'Mobile' "
 
+    # Today / Yesterday: Shopify publishes page speed and search data ~1-2
+    # days late. If the asked-for day isn't out yet, show the latest day that
+    # is (and say so) instead of an empty card.
+    speed_w, speed_prev_w, speed_label, speed_note = cur_w, prev_w, window_label, None
+    search_w, search_label, search_note = cur_w, window_label, None
+    if period in ("today", "yesterday"):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_speed = pool.submit(_latest_day_with_data, store, "web_performance", "page_loads", first)
+            f_search = pool.submit(_latest_day_with_data, store, "search_conversions", "sessions_with_searches", first)
+            (speed_day, _), (search_day, _) = f_speed.result(), f_search.result()
+        asked = "today" if period == "today" else f"yesterday ({_day_label(first)})"
+        if speed_day and speed_day < first:
+            speed_w, speed_prev_w = _since(speed_day, speed_day), _since(speed_day - timedelta(days=7), speed_day - timedelta(days=7))
+            speed_label = f"{_day_label(speed_day)} (latest day Shopify has published) · compared with {_day_label(speed_day - timedelta(days=7))}"
+            speed_note = (f"Shopify publishes page speed data about 1-2 days late, so {asked} isn't out yet. "
+                          f"Showing the latest available day: {_day_label(speed_day)}.")
+        if search_day and search_day < first:
+            search_w = _since(search_day, search_day)
+            search_label = f"{_day_label(search_day)} (latest day Shopify has published)"
+            search_note = (f"Shopify publishes site search data about 1-2 days late, so {asked} isn't out yet. "
+                           f"Showing the latest available day: {_day_label(search_day)}.")
+
     queries = {
-        "device": f"FROM web_performance SHOW {CWV_SHOW} GROUP BY device_type {cur_w} ORDER BY page_loads DESC",
-        "device_prev": f"FROM web_performance SHOW {CWV_SHOW} GROUP BY device_type {prev_w} ORDER BY page_loads DESC",
-        "page_type": f"FROM web_performance SHOW {CWV_SHOW} {mobile}GROUP BY page_type {cur_w} ORDER BY page_loads DESC",
-        "pages": f"FROM web_performance SHOW {CWV_SHOW} {mobile}GROUP BY page_path {cur_w} ORDER BY page_loads DESC LIMIT 25",
-        "trend": f"FROM web_performance SHOW page_loads, lcp_p75_ms, inp_p75_ms, p75_cls {mobile}TIMESERIES day {cur_w}",
+        "device": f"FROM web_performance SHOW {CWV_SHOW} GROUP BY device_type {speed_w} ORDER BY page_loads DESC",
+        "device_prev": f"FROM web_performance SHOW {CWV_SHOW} GROUP BY device_type {speed_prev_w} ORDER BY page_loads DESC",
+        "page_type": f"FROM web_performance SHOW {CWV_SHOW} {mobile}GROUP BY page_type {speed_w} ORDER BY page_loads DESC",
+        "pages": f"FROM web_performance SHOW {CWV_SHOW} {mobile}GROUP BY page_path {speed_w} ORDER BY page_loads DESC LIMIT 25",
+        "trend": f"FROM web_performance SHOW page_loads, lcp_p75_ms, inp_p75_ms, p75_cls {mobile}TIMESERIES day {cur_w if period is None else speed_w}",
         "search_conv": (
             "FROM search_conversions SHOW sessions_with_searches, search_sessions_that_completed_checkout, "
-            f"search_conversion_rate, search_added_to_cart_rate, search_click_rate {cur_w}"
+            f"search_conversion_rate, search_added_to_cart_rate, search_click_rate {search_w}"
         ),
-        "sessions": f"FROM sessions SHOW sessions, sessions_that_completed_checkout {HUMAN_SESSIONS_FILTER}{cur_w}",
-        "search_results": f"FROM searches SHOW searches GROUP BY search_results_were_returned {cur_w}",
-        "top_terms": f"FROM searches SHOW searches GROUP BY search_query {cur_w} ORDER BY searches DESC LIMIT 20",
+        "sessions": f"FROM sessions SHOW sessions, sessions_that_completed_checkout {HUMAN_SESSIONS_FILTER}{search_w}",
+        "search_results": f"FROM searches SHOW searches GROUP BY search_results_were_returned {search_w}",
+        "top_terms": f"FROM searches SHOW searches GROUP BY search_query {search_w} ORDER BY searches DESC LIMIT 20",
         "zero_terms": (
             "FROM searches SHOW searches WHERE search_results_were_returned = false "
-            f"GROUP BY search_query {cur_w} ORDER BY searches DESC LIMIT 20"
+            f"GROUP BY search_query {search_w} ORDER BY searches DESC LIMIT 20"
         ),
         "term_clicks": (
             "FROM search_queries SHOW search_queries, search_queries_with_clicks "
-            f"GROUP BY search_query {cur_w} ORDER BY search_queries DESC LIMIT 200"
+            f"GROUP BY search_query {search_w} ORDER BY search_queries DESC LIMIT 200"
         ),
     }
 
@@ -224,6 +271,10 @@ def fetch_site_health(store: models.Store, days: int = 28, period: str | None = 
         "period": period or f"last{days}",
         "window_label": window_label,
         "compare_label": compare_label,
+        "speed_window_label": speed_label,
+        "speed_note": speed_note,
+        "search_window_label": search_label,
+        "search_note": search_note,
         "limits": {m: {"good": g, "poor": p, "unit": u} for m, (g, p, u) in LIMITS.items()},
         "cwv_available": cwv_ok,
         "devices": devices,

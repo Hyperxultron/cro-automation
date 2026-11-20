@@ -182,6 +182,31 @@ function Dashboard() {
         return () => clearInterval(timer);
     }, [loadData]);
 
+    const [testEmail, setTestEmail] = useState<{ ok: boolean; text: string } | null>(null);
+    const [testEmailSending, setTestEmailSending] = useState(false);
+    const sendTestEmail = async () => {
+        setTestEmailSending(true);
+        setTestEmail(null);
+        try {
+            const r = await api.sendDailyReport();
+            if (r.status === "sent") {
+                setTestEmail({ ok: true, text: `Sent: "${r.subject ?? "CRO daily numbers"}". Check your inbox (and spam) in a minute.` });
+            } else {
+                const why = r.detail ?? "unknown error";
+                const hint = why.includes("not set")
+                    ? " Add the email settings (SMTP_HOST, SMTP_USER, SMTP_PASSWORD, DAILY_REPORT_TO) in Render → Environment."
+                    : why.toLowerCase().includes("auth") || why.includes("535")
+                      ? " Gmail refused the login: use a Gmail App Password, not the normal password."
+                      : "";
+                setTestEmail({ ok: false, text: `Not sent: ${why}.${hint}` });
+            }
+        } catch (e) {
+            setTestEmail({ ok: false, text: `Not sent: ${e instanceof Error ? e.message : "request failed"}` });
+        } finally {
+            setTestEmailSending(false);
+        }
+    };
+
     const refreshNow = async () => {
         setSyncing(true);
         try {
@@ -1176,6 +1201,24 @@ function Dashboard() {
                                             <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.type === "alert" ? "bg-red-50 text-red-700" : item.type === "email" ? "bg-slate-100 text-slate-600" : "bg-emerald-50 text-emerald-700"}`}>{item.time}</span>
                                         </div>
                                     ))}
+                                </div>
+                                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-semibold text-slate-800">Daily numbers email</p>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            Sent automatically every day at 11:00 AM IST with yesterday's numbers. Use the button to send one now and check it arrives.
+                                        </p>
+                                        {testEmail && (
+                                            <p className={`mt-2 text-xs font-medium ${testEmail.ok ? "text-emerald-700" : "text-red-600"}`}>{testEmail.text}</p>
+                                        )}
+                                    </div>
+                                    <button
+                                        onClick={sendTestEmail}
+                                        disabled={testEmailSending}
+                                        className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                                    >
+                                        <Mail size={16} /> {testEmailSending ? "Sending…" : "Send test email"}
+                                    </button>
                                 </div>
                             </section>
 

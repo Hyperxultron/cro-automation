@@ -23,6 +23,7 @@ import time
 
 from clarity import sync_clarity
 from cvr_alarm import check_cvr_alarm
+from daily_report import maybe_send_daily_report
 from database import SessionLocal
 from quilt_alarm import check_quilt_alarm
 from shopify_sync import sync_store
@@ -76,8 +77,18 @@ def run_once() -> dict:
             logger.exception("Clarity sync failed")
             clarity = {"status": "error", "detail": str(exc)[:300]}
 
+        try:
+            # Daily numbers email (once a day at/after DAILY_REPORT_UTC; catches
+            # up on wake-up if the backend was asleep at send time).
+            report = maybe_send_daily_report(db, store)
+        except Exception as exc:
+            db.rollback()
+            logger.exception("Daily report failed")
+            report = {"status": "error", "detail": str(exc)[:300]}
+
         last_run = {
             "status": "success",
+            "daily_report": report.get("status"),
             "sync_days": BACKFILL_DAYS if backfill else 2,
             "orders": result["orders"],
             "quilt_alarm": quilt.get("status"),

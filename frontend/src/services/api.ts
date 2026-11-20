@@ -288,6 +288,10 @@ export type LandingPagesData = {
   days: number;
   window_label: string;
   compare_label: string;
+  speed_window_label?: string;
+  speed_note?: string | null;
+  search_window_label?: string;
+  search_note?: string | null;
   bounce_definition: string;
   min_sessions: number;
   bounce_flag_pts: number;
@@ -468,6 +472,8 @@ export const api = {
     request<{ store_id: number; days: CvrDay[] }>(`/dashboard/cvr-trend?days=${days}`),
   alerts: (limit = 100) => request<AlertItem[]>(`/dashboard/alerts?limit=${limit}`),
   sync: () => request<Record<string, unknown>>("/dashboard/sync?days=2", { method: "POST" }),
+  sendDailyReport: () =>
+    request<{ status: string; detail?: string; report_date?: string; subject?: string }>("/dashboard/send-daily-report", { method: "POST" }),
   topProducts: (days = 1, limit = 5) =>
     request<{ days: number; products: TopProduct[] }>(`/dashboard/top-products?days=${days}&limit=${limit}`),
   ordersTrend: (days = 7) =>

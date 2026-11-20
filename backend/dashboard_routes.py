@@ -528,6 +528,24 @@ def cart_extras(
     return fetch_cart_extras(db, store, days=days, threshold=threshold, period=period)
 
 
+@router.post("/send-daily-report")
+def send_daily_report_now(
+    to: str | None = Query(None, description="Optional comma list; default DAILY_REPORT_TO"),
+    dry_run: bool = Query(False, description="true = build the email and return it, don't send"),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Send yesterday's daily numbers email now (for testing). Doesn't block the scheduled send."""
+    from daily_report import build_report, send_daily_report
+
+    store = _get_store(db, shop)
+    if dry_run:
+        subject, body = build_report(db, store)
+        return {"status": "dry_run", "subject": subject, "preview": body}
+    recipients = [a.strip() for a in to.split(",") if a.strip()] if to else None
+    return send_daily_report(db, store, force=True, to=recipients)
+
+
 @router.get("/clarity-status")
 def clarity_status(shop: str | None = Query(None), db: Session = Depends(get_db)):
     """Is Microsoft Clarity connected, and how many days of product views are saved?"""

@@ -132,3 +132,15 @@ class ClarityProductDay(Base):
     sessions = Column(Integer, default=0)
     bot_sessions = Column(Integer, default=0)
     fetched_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DailyReportLog(Base):
+    """One row per daily numbers email sent, so it never goes out twice."""
+    __tablename__ = "daily_report_log"
+    __table_args__ = (UniqueConstraint("store_id", "report_date", name="ux_daily_report_day"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    report_date = Column(Date, nullable=False)
+    recipients = Column(Text, nullable=True)
+    sent_at = Column(DateTime(timezone=True), server_default=func.now())

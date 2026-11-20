@@ -141,10 +141,11 @@ function SiteHealth() {
           <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-4 flex items-center gap-2">
               <Smartphone className="text-blue-500" size={20} />
-              <div><h3 className="font-bold text-slate-900">Mobile page speed<InfoTip text={HELP.webVitals} /></h3><p className="text-xs text-slate-400">{data.window_label}</p></div>
+              <div><h3 className="font-bold text-slate-900">Mobile page speed<InfoTip text={HELP.webVitals} /></h3><p className="text-xs text-slate-400">{data.speed_window_label ?? data.window_label}</p></div>
             </div>
+            {data.speed_note && <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.speed_note}</p>}
             {!data.cwv_available || !mobile ? (
-              <p className="text-xs text-slate-400">Page speed data isn't available from Shopify for this period.</p>
+              <p className="text-xs text-slate-400">Shopify hasn't published page speed data for this period yet (it usually arrives 1-2 days late).</p>
             ) : (
               <>
                 <div className="grid gap-4 md:grid-cols-3">
@@ -179,7 +180,7 @@ function SiteHealth() {
             <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
               <div className="mb-4 flex items-center gap-2">
                 <Gauge className="text-blue-500" size={20} />
-                <div><h3 className="font-bold text-slate-900">Mobile speed by page type<InfoTip text={HELP.webVitals} /></h3><p className="text-xs text-slate-400">{data.window_label}</p></div>
+                <div><h3 className="font-bold text-slate-900">Mobile speed by page type<InfoTip text={HELP.webVitals} /></h3><p className="text-xs text-slate-400">{data.speed_window_label ?? data.window_label}</p></div>
               </div>
               <VitalsTable rows={data.page_types.map((p) => ({ ...p, name: p.label }))} label="Page type" />
               {data.pages.length > 0 && (
@@ -194,8 +195,9 @@ function SiteHealth() {
           <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-4 flex items-center gap-2">
               <Search className="text-blue-500" size={20} />
-              <div><h3 className="font-bold text-slate-900">Site search<InfoTip text={HELP.siteSearch} /></h3><p className="text-xs text-slate-400">{data.window_label}</p></div>
+              <div><h3 className="font-bold text-slate-900">Site search<InfoTip text={HELP.siteSearch} /></h3><p className="text-xs text-slate-400">{data.search_window_label ?? data.window_label}</p></div>
             </div>
+            {data.search_note && <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{data.search_note}</p>}
             {!s ? (
               <p className="text-xs text-slate-400">Search data isn't available from Shopify for this period.</p>
             ) : (
