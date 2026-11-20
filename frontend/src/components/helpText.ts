@@ -10,7 +10,7 @@ export const HELP = {
     openAlerts: "Alerts that fired and aren't resolved yet. Manage the rules on the Alarm Rules page.",
     aov: "Average order value = (gross sales − discounts) ÷ orders, before shipping and tax. Same definition as Shopify.",
     salesOverTime:
-        "Total sales per day. Solid line = the last 14 complete days, dashed line = the 14 days before. Orange markers = changes from the Change Log.",
+        "Total sales per day (complete days only, so today isn't included). Green line = the dates shown in green; grey dashed line = the same number of days just before. Hover a day to see both dates and their sales. Orange dots = changes logged in the Change Log.",
     salesBreakdown:
         "How we get from gross sales to total sales, same rows as Shopify Analytics. Green = good for the store, red = bad (so more discounts or refunds show in red).",
     cvrTrend:

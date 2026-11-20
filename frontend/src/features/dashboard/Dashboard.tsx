@@ -112,6 +112,7 @@ function Dashboard() {
     // "Total sales over time" + "Total sales breakdown" (manager's ask: bring
     // Shopify's own Analytics-page sales widgets onto our dashboard).
     const [salesTrend, setSalesTrend] = useState<SalesTrend | null>(null);
+    const [salesDays, setSalesDays] = useState<7 | 14 | 28>(14);
     const [salesBreakdown, setSalesBreakdown] = useState<SalesBreakdown | null>(null);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
@@ -131,7 +132,7 @@ function Dashboard() {
                 api.orderHealth(30).catch(() => null),
                 api.overview(overviewPeriod, overviewCompare).catch(() => null),
                 api.changeLog(Math.max(periodDays, 28)).catch(() => ({ days: 0, valid_areas: [], entries: [] as ChangeLogEntry[] })),
-                api.salesTrend(14).catch(() => null),
+                api.salesTrend(salesDays).catch(() => null),
                 api.salesBreakdown(overviewPeriod, overviewCompare).catch(() => null),
                 api.alarmRules().catch(() => [] as AlarmRuleItem[]),
             ]);
@@ -150,7 +151,7 @@ function Dashboard() {
         } finally {
             setLoading(false);
         }
-    }, [periodDays, overviewPeriod, overviewCompare]);
+    }, [periodDays, overviewPeriod, overviewCompare, salesDays]);
 
     // Conversion Funnel card has its own Today / Yesterday / Last 7 switch; it
     // follows the Overview period picker when that changes.
@@ -234,9 +235,20 @@ function Dashboard() {
     // the same idea Shopify's own chart uses.
     const salesChartData = (salesTrend?.current ?? []).map((d, i) => ({
         day: formatDay(d.date, true),
+        curDate: d.date,
+        prevDate: salesTrend?.previous[i]?.date ?? null,
         current: d.revenue,
         previous: salesTrend?.previous[i]?.revenue ?? null,
     }));
+    // "5 - 18 Nov" style labels for the two windows, so nobody has to guess
+    // which dates the grey line is.
+    const rangeText = (list: { date: string }[] | undefined) => {
+        if (!list || list.length === 0) return "";
+        const f = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+        return `${f(list[0].date)} - ${f(list[list.length - 1].date)}`;
+    };
+    const salesCurRange = rangeText(salesTrend?.current);
+    const salesPrevRange = rangeText(salesTrend?.previous);
     const salesMarkers = markersFor(new Set(salesChartData.map((d) => d.day)));
     // Days before our synced order history are null (unknown), not $0. Only
     // compare totals when both windows are fully covered.
@@ -798,19 +810,40 @@ function Dashboard() {
                                     <div className="mb-6 flex items-center justify-between">
                                         <div>
                                             <h3 className="font-bold text-slate-900">Total Sales Over Time<InfoTip text={HELP.salesOverTime} /></h3>
-                                            <p className="mt-1 text-xs text-slate-400">Last {salesTrend?.days ?? 14} days vs the {salesTrend?.days ?? 14} days before that</p>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                Daily sales: <b className="text-emerald-600">{salesCurRange || "…"}</b> vs{" "}
+                                                <b className="text-slate-500">{salesPrevRange || "…"}</b> (grey dashed line)
+                                            </p>
                                         </div>
-                                        <DollarSign className="text-blue-500" size={20} />
+                                        <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
+                                            {([7, 14, 28] as const).map((d) => (
+                                                <button
+                                                    key={d}
+                                                    onClick={() => setSalesDays(d)}
+                                                    className={`rounded-md px-2 py-1 font-medium ${salesDays === d ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                                >
+                                                    {d} days
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                     <div className="mb-4 flex items-end gap-3">
                                         <span className="text-3xl font-bold text-slate-900">{formatMoney(salesTotal, currency)}</span>
                                         {salesTotalChangePct !== null && (
                                             <span className={`mb-1 flex items-center gap-1 text-xs font-semibold ${salesTotalChangePct < 0 ? "text-red-600" : "text-emerald-600"}`}>
                                                 {salesTotalChangePct < 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}
-                                                {salesTotalChangePct > 0 ? "+" : ""}{salesTotalChangePct}% vs previous period
+                                                {salesTotalChangePct > 0 ? "+" : ""}{salesTotalChangePct}% vs {salesPrevRange}
                                             </span>
                                         )}
                                     </div>
+                                    {salesTotalChangePct !== null && (
+                                        <p className="mb-3 text-sm text-slate-600">
+                                            Sales are <b className={salesTotalChangePct < 0 ? "text-red-600" : "text-emerald-600"}>
+                                                {salesTotalChangePct < 0 ? "down" : "up"} {Math.abs(salesTotalChangePct)}%
+                                            </b>{" "}
+                                            in the last {salesTrend?.days ?? salesDays} days ({formatMoney(salesTotal, currency)}) compared with the {salesTrend?.days ?? salesDays} days before ({formatMoney(salesTotalPrev, currency)}).
+                                        </p>
+                                    )}
                                     {salesChartData.length === 0 && (
                                         <p className="mb-2 text-xs text-slate-400">{loading ? "Loading…" : "No sales data available for this period."}</p>
                                     )}
@@ -824,8 +857,19 @@ function Dashboard() {
                                                 <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
                                                 <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
                                                 <Tooltip
-                                                    contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }}
-                                                    formatter={(value, name) => [formatMoney(Number(value) || 0, currency), name === "current" ? "This period" : "Previous period"]}
+                                                    content={({ active, payload }) => {
+                                                        if (!active || !payload?.length) return null;
+                                                        const row = payload[0].payload as (typeof salesChartData)[number];
+                                                        const f = (iso: string | null) =>
+                                                            iso ? new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "—";
+                                                        const money = (v: number | null) => (v === null ? "no data" : formatMoney(v, currency));
+                                                        return (
+                                                            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
+                                                                <p className="font-semibold text-emerald-600">{f(row.curDate)}: {money(row.current)}</p>
+                                                                <p className="mt-0.5 text-slate-500">{f(row.prevDate)}: {money(row.previous)}</p>
+                                                            </div>
+                                                        );
+                                                    }}
                                                 />
                                                 <Line type="linear" dataKey="previous" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} />
                                                 <Line type="linear" dataKey="current" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
@@ -836,7 +880,11 @@ function Dashboard() {
                                             </ComposedChart>
                                         </ResponsiveContainer>
                                     </div>
-                                    <p className="mt-2 text-xs text-slate-400">Solid line with dots: this period · dashed: the {salesTrend?.days ?? 14} days before</p>
+                                    <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                                        <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 bg-emerald-500" /> {salesCurRange}</span>
+                                        <span className="flex items-center gap-1.5"><span className="inline-block w-5 border-t-2 border-dashed border-slate-400" /> {salesPrevRange} (same weekday, one period earlier)</span>
+                                        {salesMarkers.length > 0 && <span className="flex items-center gap-1.5"><span className="text-amber-500">●</span> a change from the Change Log</span>}
+                                    </div>
                                 </section>
 
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
