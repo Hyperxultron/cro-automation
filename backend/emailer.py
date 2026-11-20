@@ -35,7 +35,7 @@ def send_alert_email(subject: str, body: str, override_to: str | None = None) ->
     recipients = [addr.strip() for addr in to_raw.split(",") if addr.strip()]
 
     msg = MIMEText(body)
-    msg["Subject"] = f"[CRO Automation] {subject}"
+    msg["Subject"] = f"[Ridhi Pulse] {subject}"
     msg["From"] = sender
     msg["To"] = ", ".join(recipients)
 

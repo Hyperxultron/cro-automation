@@ -121,7 +121,7 @@ def build_report(db: Session, store: models.Store) -> tuple[str, str]:
     m = ov["metrics"]
     day_label = ov["period_label"]
     lines += [
-        f"CRO daily numbers - {day_label}",
+        f"Ridhi Pulse daily numbers - {day_label}",
         f"Store time zone: {ov.get('timezone')}. Changes are vs the 4-week same-weekday average.",
         "",
         "SALES",
@@ -223,9 +223,9 @@ def build_report(db: Session, store: models.Store) -> tuple[str, str]:
         lines += [f"  ! {c}" for c in checks]
     else:
         lines.append("  OK - orders synced, sessions and orders present, no open alerts.")
-    lines += ["", "Dashboard: https://cro-automation-1.onrender.com/", "Sent automatically by the CRO dashboard backend."]
+    lines += ["", "Dashboard: https://cro-automation-1.onrender.com/", "Sent automatically by Ridhi Pulse."]
 
-    subject = f"CRO daily numbers - {day_label.split('(')[-1].split(',')[0] if '(' in day_label else day_label}"
+    subject = f"Ridhi Pulse daily numbers - {day_label.split('(')[-1].split(',')[0] if '(' in day_label else day_label}"
     return subject, "\n".join(lines)
 
 

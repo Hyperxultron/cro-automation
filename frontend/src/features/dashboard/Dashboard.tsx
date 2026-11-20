@@ -23,6 +23,7 @@ import FunnelBars from "../analytics/FunnelBars";
 import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
+import { BRAND, Logo } from "../../brand";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
     Bell, ChevronDown, Moon, Sun, Clock3, DollarSign, FileText, FlaskConical, Gauge, Globe, History, IndianRupee, LayoutDashboard,
@@ -120,22 +121,6 @@ function DeviceFunnelBars({ data, device, error }: { data: DeviceFunnel | null; 
 }
 
 // Logo A from the approved Ocean Pro preview (funnel + rising arrow).
-function BrandMark() {
-    return (
-        <svg viewBox="0 0 32 32" className="h-9 w-9 shrink-0 rounded-[10px]" aria-hidden="true">
-            <defs>
-                <linearGradient id="cro-mark" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0" stopColor="#4f46e5" />
-                    <stop offset="1" stopColor="#06b6d4" />
-                </linearGradient>
-            </defs>
-            <rect width="32" height="32" rx="9" fill="url(#cro-mark)" />
-            <path d="M7 8h18l-7 8.5v6l-4 2v-8z" fill="#fff" opacity=".32" />
-            <path d="M9.5 21l5-5 3 3 6.5-6.5M19.5 12.5h4.5V17" stroke="#fff" strokeWidth="2.3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-    );
-}
-
 function Dashboard() {
     // Light / dark (Ocean Pro). Saved per browser; index.html applies it before paint.
     const [theme, setTheme] = useState<"light" | "dark">(() =>
@@ -148,6 +133,9 @@ function Dashboard() {
         else delete document.documentElement.dataset.theme;
         try { localStorage.setItem("cro-theme", next); } catch { /* private mode */ }
     };
+    useEffect(() => {
+        document.title = BRAND.name;
+    }, []);
     const [alarmRules, setAlarmRules] = useState<AlarmRuleItem[]>([]);
     const [activeNav, setActiveNav] = useState("Overview");
     const [mobileMenu, setMobileMenu] = useState(false);
@@ -443,7 +431,6 @@ function Dashboard() {
                 { name: "Change Log", icon: History },
                 { name: "Alarm Rules", icon: Bell },
                 { name: "Alert History", icon: Activity },
-                { name: "Reports", icon: FileText },
             ],
         },
         {
@@ -470,10 +457,10 @@ function Dashboard() {
                 <aside className={`ocean-side fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col text-white transition-transform lg:rounded-r-3xl lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${mobileMenu ? "translate-x-0" : "-translate-x-full"}`}>
                     <div className="flex h-20 items-center justify-between px-6">
                         <div className="flex items-center gap-3">
-                            <BrandMark />
+                            <Logo size={36} />
                             <div>
-                                <h1 className="text-[15px] font-bold tracking-tight text-white">CRO.AI</h1>
-                                <p className="text-[9.5px] uppercase tracking-[0.2em] text-[#7fb0c6]">Automation</p>
+                                <h1 className="text-[15px] font-bold tracking-tight text-white">{BRAND.name}</h1>
+                                <p className="text-[9.5px] uppercase tracking-[0.2em] text-[#7fb0c6]">{BRAND.tagline}</p>
                             </div>
                         </div>
                         <button className="lg:hidden" onClick={() => setMobileMenu(false)}>
@@ -502,7 +489,7 @@ function Dashboard() {
                                         {item.name === "Alarm Rules" && (
                                             <span className="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-[10.5px] text-white">02</span>
                                         )}
-                                        {(item.name === "Reports" || item.name === "Team") && (
+                                        {item.name === "Team" && (
                                             <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-[#7fb0c6]">Soon</span>
                                         )}
                                     </button>
@@ -527,12 +514,22 @@ function Dashboard() {
                             </div>
                         </div>
                         <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-5">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-sm font-bold">A</div>
-                            <div>
-                                <p className="text-sm font-medium">Admin</p>
-                                <p className="text-xs text-[#7fb0c6]">CRO Workspace</p>
+                            <Logo size={36} />
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold">{BRAND.name}</p>
+                                <p className="truncate text-xs text-[#7fb0c6]">{summary?.store.name ?? BRAND.tagline}</p>
                             </div>
-                            <Settings size={17} className="ml-auto text-[#7fb0c6]" />
+                            <button
+                                onClick={() => {
+                                    setActiveNav("Settings");
+                                    setMobileMenu(false);
+                                }}
+                                title="Settings"
+                                aria-label="Open settings"
+                                className="ml-auto rounded-lg p-1.5 text-[#7fb0c6] transition hover:bg-white/10 hover:text-white"
+                            >
+                                <Settings size={17} />
+                            </button>
                         </div>
                     </div>
                 </aside>
@@ -569,7 +566,7 @@ function Dashboard() {
                                     <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
                                 )}
                             </button>
-                            <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white sm:flex">A</div>
+                            <Logo size={36} className="hidden sm:block" />
                         </div>
                     </header>
 
@@ -642,21 +639,6 @@ function Dashboard() {
                         {activeNav === "Site Health" && (
                             <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
                                 <SiteHealth />
-                            </div>
-                        )}
-                        {activeNav === "Reports" && (
-                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
-                                <ComingSoon
-                                    icon={FileText}
-                                    title="Reports"
-                                    description="Daily, weekly and monthly store performance reports."
-                                    roadmap={[
-                                        "Daily / weekly / monthly performance reports",
-                                        "Product performance & alarm summary reports",
-                                        "PDF / CSV export",
-                                        "Scheduled automated email reports",
-                                    ]}
-                                />
                             </div>
                         )}
                         {activeNav === "Team" && (
@@ -1436,7 +1418,7 @@ function Dashboard() {
                             )}
 
                             <footer className="flex flex-col justify-between gap-2 border-t border-slate-200 py-5 text-xs text-slate-400 sm:flex-row">
-                                <p>© 2026 CRO Automation. All rights reserved.</p>
+                                <p>© 2026 {BRAND.name}. All rights reserved.</p>
                                 <p className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${summary ? "bg-emerald-500" : "bg-slate-400"}`} /> {summary ? `Live Shopify data · ${summary.store.domain} · synced ${timeAgo(summary.store.last_synced_at)}` : "Connecting to backend…"}</p>
                             </footer>
                         </div>

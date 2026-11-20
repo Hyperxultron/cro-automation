@@ -11,7 +11,7 @@ from dependencies import get_db
 from api_key import api_key_dependency
 
 app = FastAPI(
-    title="CRO Automation API",
+    title="Ridhi Pulse API",
     description="Backend API for CRO monitoring and automation",
     version="1.0.0",
     dependencies=[api_key_dependency],
@@ -62,7 +62,7 @@ app.add_middleware(
 @app.get("/")
 def home():
     return {
-        "message": "CRO Automation Backend is running!",
+        "message": "Ridhi Pulse backend is running!",
         "status": "success"
     }
 
@@ -70,7 +70,7 @@ def home():
 def health_check():
     return {
         "status": "healthy",
-        "service": "CRO Automation API"
+        "service": "Ridhi Pulse API"
     }
 @app.get("/db-check")
 def db_check(db: Session = Depends(get_db)):
