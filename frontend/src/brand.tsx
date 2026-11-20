@@ -4,16 +4,31 @@ import { useId } from "react";
 export const BRAND = {
     name: "Ridhi Pulse",
     tagline: "CRO Analytics",
-    // Logo options: "tide" | "funnel" | "ring" | "steps"
-    logo: "tide" as LogoVariant,
+    // Logo options: "buti" | "tide" | "funnel" | "ring" | "steps"
+    logo: "buti" as LogoVariant,
 };
 
-export type LogoVariant = "tide" | "funnel" | "ring" | "steps";
+export type LogoVariant = "buti" | "tide" | "funnel" | "ring" | "steps";
 
 export function Logo({ size = 36, variant = BRAND.logo, className = "" }: { size?: number; variant?: LogoVariant; className?: string }) {
     const id = useId().replace(/:/g, "");
     const common = { width: size, height: size, viewBox: "0 0 40 40", className: `shrink-0 ${className}`, "aria-hidden": true } as const;
 
+    if (variant === "buti") {
+        // Block-print buti (Ridhi) with a live dot in the centre.
+        return (
+            <svg {...common} viewBox="0 0 48 48">
+                <defs><linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#0d5a72" /><stop offset="1" stopColor="#0e7490" /></linearGradient></defs>
+                <rect width="48" height="48" rx="13" fill={`url(#${id})`} />
+                <circle cx="24" cy="24" r="19.5" fill="none" stroke="#fff" strokeOpacity=".55" strokeWidth="1.6" strokeDasharray="0 3.6" strokeLinecap="round" />
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((k) => (
+                    <ellipse key={k} cx="24" cy="14.2" rx="3.4" ry="6.6" transform={`rotate(${k * 45} 24 24)`} fill={k % 2 ? "#ffffff" : "#5eead4"} fillOpacity={k % 2 ? 0.85 : 1} />
+                ))}
+                <circle cx="24" cy="24" r="5" fill="#0b2f47" />
+                <circle cx="24" cy="24" r="2.2" fill="#5eead4" />
+            </svg>
+        );
+    }
     if (variant === "funnel") {
         return (
             <svg {...common}>
