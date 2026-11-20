@@ -121,6 +121,31 @@ def _windows(store: models.Store, days: int):
     return first, yesterday, p_first, p_last
 
 
+def period_windows(store: models.Store, days: int, period: str | None):
+    """
+    Shared date windows for the Today / Yesterday / Last N days buttons.
+    Returns (first, last, prev_first, prev_last, window_label, compare_label).
+    Dates are in the store's time zone, same as Shopify admin.
+    """
+    now = datetime.now(_tz(store))
+    if period == "today":
+        first = last = now.date()
+        p_first = p_last = first - timedelta(days=7)
+        return (first, last, p_first, p_last,
+                f"Today so far ({first.strftime('%a %d %b')}, as of {now.strftime('%H:%M')} store time)",
+                f"{p_first.strftime('%a %d %b')} (full day)")
+    if period == "yesterday":
+        first = last = now.date() - timedelta(days=1)
+        p_first = p_last = first - timedelta(days=7)
+        return (first, last, p_first, p_last,
+                f"Yesterday ({first.strftime('%a %d %b')}, complete day)",
+                f"{p_first.strftime('%a %d %b')} (same weekday last week)")
+    first, last, p_first, p_last = _windows(store, days)
+    return (first, last, p_first, p_last,
+            f"{first.strftime('%d %b')} - {last.strftime('%d %b')} (last {days} complete days)",
+            f"{p_first.strftime('%d %b')} - {p_last.strftime('%d %b')}")
+
+
 def _since(a, b) -> str:
     return f"SINCE {a.isoformat()} UNTIL {b.isoformat()}"
 
@@ -161,26 +186,13 @@ def fetch_landing_pages(store: models.Store, days: int = 28, period: str | None 
                     (rates like bounce % compare fine; session counts won't).
     """
     now = datetime.now(_tz(store))
+    period = period if period in ("today", "yesterday") else None
     key = (store.store_url, days, period, now.date().isoformat())
     cached = _cache.get(key)
     if cached and cached[0] > time.time():
         return cached[1]
 
-    if period == "today":
-        first = last = now.date()
-        p_first = p_last = first - timedelta(days=7)
-        window_label = f"Today so far ({first.strftime('%a %d %b')}, as of {now.strftime('%H:%M')} store time)"
-        compare_label = f"{p_first.strftime('%a %d %b')} (full day)"
-    elif period == "yesterday":
-        first = last = now.date() - timedelta(days=1)
-        p_first = p_last = first - timedelta(days=7)
-        window_label = f"Yesterday ({first.strftime('%a %d %b')}, complete day)"
-        compare_label = f"{p_first.strftime('%a %d %b')} (same weekday last week)"
-    else:
-        period = None
-        first, last, p_first, p_last = _windows(store, days)
-        window_label = f"{first.strftime('%d %b')} - {last.strftime('%d %b')} (last {days} complete days)"
-        compare_label = f"{p_first.strftime('%d %b')} - {p_last.strftime('%d %b')}"
+    first, last, p_first, p_last, window_label, compare_label = period_windows(store, days, period)
     min_s = MIN_SESSIONS_ONE_DAY if period else MIN_SESSIONS
     cur_w, prev_w = _since(first, last), _since(p_first, p_last)
     H = HUMAN_SESSIONS_FILTER

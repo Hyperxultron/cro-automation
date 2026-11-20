@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import models
-from landing import _f, _i, _run, _since, _windows
+from landing import _f, _i, _run, _since, period_windows
 from overview import _tz
 from shopify_client import HUMAN_SESSIONS_FILTER
 
@@ -92,13 +92,14 @@ def _add_change(cur: dict, prev: dict | None) -> dict:
     return cur
 
 
-def fetch_site_health(store: models.Store, days: int = 28) -> dict:
-    key = (store.store_url, days, datetime.now(_tz(store)).date().isoformat())
+def fetch_site_health(store: models.Store, days: int = 28, period: str | None = None) -> dict:
+    period = period if period in ("today", "yesterday") else None
+    key = (store.store_url, days, period, datetime.now(_tz(store)).date().isoformat())
     cached = _cache.get(key)
     if cached and cached[0] > time.time():
         return cached[1]
 
-    first, last, p_first, p_last = _windows(store, days)
+    first, last, p_first, p_last, window_label, compare_label = period_windows(store, days, period)
     cur_w, prev_w = _since(first, last), _since(p_first, p_last)
     mobile = "WHERE device_type = 'Mobile' "
 
@@ -154,6 +155,8 @@ def fetch_site_health(store: models.Store, days: int = 28) -> dict:
         if not d:
             continue
         lcp, inp, cls = _f(r.get("lcp_p75_ms")), _f(r.get("inp_p75_ms")), _f(r.get("p75_cls"))
+        if not _i(r.get("page_loads")) or not lcp or lcp <= 0:
+            continue  # day with no measured loads yet (Shopify fills it in later) - not "0 s"
         trend.append({
             "date": d,
             "page_loads": _i(r.get("page_loads")),
@@ -218,8 +221,9 @@ def fetch_site_health(store: models.Store, days: int = 28) -> dict:
 
     result = {
         "days": days,
-        "window_label": f"{first.strftime('%d %b')} - {last.strftime('%d %b')} (last {days} complete days)",
-        "compare_label": f"{p_first.strftime('%d %b')} - {p_last.strftime('%d %b')}",
+        "period": period or f"last{days}",
+        "window_label": window_label,
+        "compare_label": compare_label,
         "limits": {m: {"good": g, "poor": p, "unit": u} for m, (g, p, u) in LIMITS.items()},
         "cwv_available": cwv_ok,
         "devices": devices,
@@ -233,5 +237,5 @@ def fetch_site_health(store: models.Store, days: int = 28) -> dict:
         ],
         "errors": errors,
     }
-    _cache[key] = (time.time() + CACHE_SECONDS, result)
+    _cache[key] = (time.time() + (120 if period == "today" else CACHE_SECONDS), result)
     return result

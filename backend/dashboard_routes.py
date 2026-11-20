@@ -500,13 +500,14 @@ def landing_pages(
 @router.get("/site-health")
 def site_health(
     days: int = Query(28, ge=7, le=90),
+    period: str | None = Query(None, pattern="^(today|yesterday)$"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """Core Web Vitals and site search (checklist section 7)."""
     store = _get_store(db, shop)
     try:
-        return fetch_site_health(store, days=days)
+        return fetch_site_health(store, days=days, period=period)
     except Exception as exc:
         logger.exception("Site health failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
@@ -515,13 +516,16 @@ def site_health(
 @router.get("/cart-extras")
 def cart_extras(
     days: int = Query(28, ge=7, le=90),
+    period: str | None = Query(None, pattern="^(today|yesterday)$"),
     threshold: float | None = Query(None, ge=0),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """Payment methods, order value histogram, items per order (checklist section 6)."""
     store = _get_store(db, shop)
-    return fetch_cart_extras(db, store, days=days, threshold=threshold)
+    if period in ("today", "yesterday"):
+        ensure_fresh_orders(db, store)  # order values / items come from our synced copy
+    return fetch_cart_extras(db, store, days=days, threshold=threshold, period=period)
 
 
 @router.get("/clarity-status")

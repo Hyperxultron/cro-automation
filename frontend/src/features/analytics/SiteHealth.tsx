@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Gauge, Info, Search, Smartphone } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api, type SiteHealthData, type Vital, type VitalRating, type VitalsRow } from "../../services/api";
+import { api, type LandingRange, type SiteHealthData, type Vital, type VitalRating, type VitalsRow } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
+import RangePicker, { rangeLabel } from "../../components/RangePicker";
 
 // Site health and behaviour (manager checklist, section 7).
 
@@ -88,7 +89,7 @@ function VitalsTable({ rows, label }: { rows: (VitalsRow & { name: string })[]; 
 }
 
 function SiteHealth() {
-  const [days, setDays] = useState<7 | 28>(28);
+  const [days, setDays] = useState<LandingRange>(28);
   const [data, setData] = useState<SiteHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -122,33 +123,25 @@ function SiteHealth() {
             {data ? <>{data.window_label} · compared with {data.compare_label}</> : "Page speed and site search, from Shopify Analytics."}
           </p>
         </div>
-        <div className="flex rounded-xl border bg-white p-1 text-sm">
-          {([7, 28] as const).map((d) => (
-            <button
-              key={d}
-              onClick={() => {
-                if (d !== days) {
-                  setLoading(true);
-                  setDays(d);
-                }
-              }}
-              className={`rounded-lg px-3 py-1.5 font-medium ${days === d ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
-            >
-              Last {d} days
-            </button>
-          ))}
-        </div>
+        <RangePicker
+          value={days}
+          onChange={(d) => {
+            setLoading(true);
+            setData(null); // never show the old range's numbers under the new button
+            setDays(d);
+          }}
+        />
       </div>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-      {loading && !data && <p className="text-sm text-slate-400">Loading from Shopify…</p>}
+      {loading && !data && <p className="text-sm text-slate-400">Loading {rangeLabel(days)} from Shopify…</p>}
 
       {data && (
         <>
           <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-4 flex items-center gap-2">
               <Smartphone className="text-blue-500" size={20} />
-              <h3 className="font-bold text-slate-900">Mobile page speed<InfoTip text={HELP.webVitals} /></h3>
+              <div><h3 className="font-bold text-slate-900">Mobile page speed<InfoTip text={HELP.webVitals} /></h3><p className="text-xs text-slate-400">{data.window_label}</p></div>
             </div>
             {!data.cwv_available || !mobile ? (
               <p className="text-xs text-slate-400">Page speed data isn't available from Shopify for this period.</p>
@@ -186,7 +179,7 @@ function SiteHealth() {
             <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
               <div className="mb-4 flex items-center gap-2">
                 <Gauge className="text-blue-500" size={20} />
-                <h3 className="font-bold text-slate-900">Mobile speed by page type<InfoTip text={HELP.webVitals} /></h3>
+                <div><h3 className="font-bold text-slate-900">Mobile speed by page type<InfoTip text={HELP.webVitals} /></h3><p className="text-xs text-slate-400">{data.window_label}</p></div>
               </div>
               <VitalsTable rows={data.page_types.map((p) => ({ ...p, name: p.label }))} label="Page type" />
               {data.pages.length > 0 && (
@@ -201,7 +194,7 @@ function SiteHealth() {
           <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-4 flex items-center gap-2">
               <Search className="text-blue-500" size={20} />
-              <h3 className="font-bold text-slate-900">Site search<InfoTip text={HELP.siteSearch} /></h3>
+              <div><h3 className="font-bold text-slate-900">Site search<InfoTip text={HELP.siteSearch} /></h3><p className="text-xs text-slate-400">{data.window_label}</p></div>
             </div>
             {!s ? (
               <p className="text-xs text-slate-400">Search data isn't available from Shopify for this period.</p>

@@ -492,9 +492,12 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   storeInfo: () => request<StoreInfo>("/dashboard/store-info"),
-  siteHealth: (days = 28) => request<SiteHealthData>(`/dashboard/site-health?days=${days}`),
-  cartExtras: (days = 28, threshold?: number | null) =>
-    request<CartExtras>(`/dashboard/cart-extras?days=${days}${threshold ? `&threshold=${threshold}` : ""}`),
+  siteHealth: (range: LandingRange = 28) =>
+    request<SiteHealthData>(`/dashboard/site-health?${typeof range === "number" ? `days=${range}` : `period=${range}`}`),
+  cartExtras: (range: LandingRange = 28, threshold?: number | null) =>
+    request<CartExtras>(
+      `/dashboard/cart-extras?${typeof range === "number" ? `days=${range}` : `period=${range}`}${threshold ? `&threshold=${threshold}` : ""}`,
+    ),
   landingPages: (range: LandingRange = 28) =>
     request<LandingPagesData>(
       typeof range === "number" ? `/dashboard/landing-pages?days=${range}` : `/dashboard/landing-pages?period=${range}`,

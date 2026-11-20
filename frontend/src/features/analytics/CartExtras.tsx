@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { CreditCard, Info, Layers, Truck } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api, formatMoney, type CartExtras as CartExtrasData, type PaymentRow } from "../../services/api";
+import { api, formatMoney, type CartExtras as CartExtrasData, type LandingRange, type PaymentRow } from "../../services/api";
+import RangePicker, { rangeLabel } from "../../components/RangePicker";
 import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
 
@@ -54,23 +55,25 @@ function PaymentTable({ rows, label, avg }: { rows: PaymentRow[]; label: string;
 function CartExtras() {
   const [threshold, setThreshold] = useState<number | null>(readThreshold);
   const [draft, setDraft] = useState(threshold ? String(threshold) : "");
+  const [range, setRange] = useState<LandingRange>(28);
   const [data, setData] = useState<CartExtrasData | null>(null);
   const [currency, setCurrency] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    Promise.all([api.summary().catch(() => null), api.cartExtras(28, threshold)])
+    Promise.all([api.summary().catch(() => null), api.cartExtras(range, threshold)])
       .then(([s, d]) => {
         if (!alive) return;
         if (s) setCurrency(s.store.currency);
         setData(d);
+        setError(null);
       })
       .catch((e) => alive && setError(e instanceof Error ? e.message : "Unable to load"));
     return () => {
       alive = false;
     };
-  }, [threshold]);
+  }, [threshold, range]);
 
   const saveThreshold = () => {
     const v = Number(draft);
@@ -84,8 +87,26 @@ function CartExtras() {
     setThreshold(next);
   };
 
-  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
-  if (!data) return <p className="text-sm text-slate-400">Loading payments and order values…</p>;
+  const header = (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h3 className="text-lg font-bold text-slate-900">Payments, order values &amp; basket size</h3>
+        <p className="text-xs text-slate-500">
+          {data ? <>Showing: <b className="text-blue-700">{data.window_label}</b></> : `Loading ${rangeLabel(range)}…`}
+        </p>
+      </div>
+      <RangePicker
+        value={range}
+        onChange={(r) => {
+          setData(null); // never show the old range's numbers under the new button
+          setRange(r);
+        }}
+      />
+    </div>
+  );
+
+  if (error) return <div className="space-y-4">{header}<div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div></div>;
+  if (!data) return <div className="space-y-4">{header}<p className="text-sm text-slate-400">Loading {rangeLabel(range)} from Shopify…</p></div>;
 
   const ov = data.order_values;
   const ip = data.items_per_order;
@@ -93,6 +114,7 @@ function CartExtras() {
 
   return (
     <div className="space-y-6">
+      {header}
       <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-1 flex items-center gap-2">
           <CreditCard className="text-blue-500" size={20} />
@@ -136,7 +158,10 @@ function CartExtras() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Truck className="text-blue-500" size={20} />
-            <h3 className="font-bold text-slate-900">Order values &amp; free-shipping threshold<InfoTip text={HELP.orderValues} /></h3>
+            <div>
+              <h3 className="font-bold text-slate-900">Order values &amp; free-shipping threshold<InfoTip text={HELP.orderValues} /></h3>
+              <p className="text-xs text-slate-500">{data.window_label}</p>
+            </div>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <label htmlFor="fs-threshold" className="text-xs text-slate-500">Free shipping from</label>
@@ -194,7 +219,10 @@ function CartExtras() {
       <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-4 flex items-center gap-2">
           <Layers className="text-blue-500" size={20} />
-          <h3 className="font-bold text-slate-900">Items per order<InfoTip text={HELP.itemsPerOrder} /></h3>
+          <div>
+            <h3 className="font-bold text-slate-900">Items per order<InfoTip text={HELP.itemsPerOrder} /></h3>
+            <p className="text-xs text-slate-500">{data.window_label}</p>
+          </div>
         </div>
         <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
           <div className="space-y-4">

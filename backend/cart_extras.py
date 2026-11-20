@@ -28,7 +28,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 import models
-from landing import _f, _i, _run, _since, _windows
+from landing import _f, _i, _run, _since, period_windows
 from overview import _day_bounds_utc, _tz
 
 logger = logging.getLogger("cart_extras")
@@ -182,22 +182,27 @@ def _items(qtys: list[int]) -> dict:
     }
 
 
-def fetch_cart_extras(db: Session, store: models.Store, days: int = 28, threshold: float | None = None) -> dict:
+def fetch_cart_extras(db: Session, store: models.Store, days: int = 28, threshold: float | None = None,
+                      period: str | None = None) -> dict:
+    """period: None (last `days` complete days), "yesterday", or "today" (live, so far)."""
     threshold = threshold if threshold else _env_threshold()
-    first, last, _, _ = _windows(store, days)
-    key = (store.store_url, days, datetime.now(_tz(store)).date().isoformat())
+    period = period if period in ("today", "yesterday") else None
+    first, last, _, _, window_label, _ = period_windows(store, days, period)
+    key = (store.store_url, days, period, datetime.now(_tz(store)).date().isoformat())
     cached = _cache.get(key)
     if cached and cached[0] > time.time():
         payments, pay_err = cached[1]
     else:
         payments, pay_err = _payments(store, _since(first, last))
         if payments is not None:
-            _cache[key] = (time.time() + CACHE_SECONDS, (payments, pay_err))
+            ttl = 120 if period == "today" else CACHE_SECONDS
+            _cache[key] = (time.time() + ttl, (payments, pay_err))
 
     values, qtys = _orders(db, store, first, last)
     return {
         "days": days,
-        "window_label": f"{first.strftime('%d %b')} - {last.strftime('%d %b')} (last {days} complete days)",
+        "period": period or f"last{days}",
+        "window_label": window_label,
         "payments": payments,
         "payments_error": pay_err,
         "order_values": _histogram(values, threshold),
