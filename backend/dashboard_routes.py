@@ -633,11 +633,13 @@ def benchmarks():
 @router.get("/order-health")
 def order_health(
     days: int = Query(30, ge=1, le=90),
+    period: str | None = Query(None, pattern="^(today|yesterday)$"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
+    """Order status mix for orders placed in the window, read live from Shopify."""
     store = _get_store(db, shop)
-    return fetch_order_health(db, store, days=days)
+    return fetch_order_health(db, store, days=days, period=period)
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
     api, formatMoney, timeAgo,
-    type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type FunnelCompare, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct, type DeviceFunnel, type KpiRange, type KpiTotals
+    type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type FunnelCompare, type OrderHealth, type OrderHealthRange, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct, type DeviceFunnel, type KpiRange, type KpiTotals
 } from "../../services/api";
 import ChangeLog from "../changelog/ChangeLog";
 import AlarmRules from "../alarms/AlarmRules";
@@ -184,6 +184,19 @@ function Dashboard() {
     const [ordersTrend, setOrdersTrend] = useState<OrdersTrendDay[]>([]);
     const [funnel, setFunnel] = useState<FunnelCompare | null>(null);
     const [orderHealth, setOrderHealth] = useState<OrderHealth | null>(null);
+    // Order Health card: its own Today / Yesterday / 7 / 30 days switch, read live from Shopify.
+    const [ohRange, setOhRange] = useState<OrderHealthRange>(30);
+    const [ohLoading, setOhLoading] = useState(true);
+    useEffect(() => {
+        let alive = true;
+        setOhLoading(true);
+        setOrderHealth(null);
+        api.orderHealth(ohRange)
+            .then((r) => alive && setOrderHealth(r))
+            .catch(() => alive && setOrderHealth(null))
+            .finally(() => alive && setOhLoading(false));
+        return () => { alive = false; };
+    }, [ohRange]);
     const [changeLogEntries, setChangeLogEntries] = useState<ChangeLogEntry[]>([]);
     // "Total sales over time" + "Total sales breakdown" (manager's ask: bring
     // Shopify's own Analytics-page sales widgets onto our dashboard).
@@ -200,12 +213,11 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t, ot, oh, ov, cl, st, sb, ar, kt] = await Promise.all([
+            const [s, t, ot, ov, cl, st, sb, ar, kt] = await Promise.all([
                 api.summary(),
                 // 2x the window: the earlier half is the dashed "previous period" line.
                 api.cvrTrend(periodDays * 2).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
                 api.ordersTrend(7).catch(() => ({ days: 7, trend: [] as OrdersTrendDay[] })),
-                api.orderHealth(30).catch(() => null),
                 api.overview(overviewPeriod, overviewCompare).catch(() => null),
                 api.changeLog(Math.max(periodDays, 28)).catch(() => ({ days: 0, valid_areas: [], entries: [] as ChangeLogEntry[] })),
                 api.salesTrend(salesDays).catch(() => null),
@@ -216,7 +228,6 @@ function Dashboard() {
             setSummary(s);
             setTrend(t.days);
             setOrdersTrend(ot.trend);
-            setOrderHealth(oh);
             setOverview(ov);
             setChangeLogEntries(cl.entries);
             setSalesTrend(st);
@@ -1248,27 +1259,48 @@ function Dashboard() {
                             </div>
 
                             <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-                                <div className="mb-5 flex items-center justify-between">
+                                <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <h3 className="font-bold text-slate-900">Order Health<InfoTip text={HELP.orderHealth} /></h3>
-                                        <p className="mt-1 text-xs text-slate-400">Paid / refunded / cancelled breakdown, last {orderHealth?.days ?? 30} days</p>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            {orderHealth ? <>Orders placed <b className="text-blue-700">{orderHealth.window_label}</b> · status as of now</> : "Loading…"}
+                                        </p>
                                     </div>
-                                    <ShieldCheck className="text-emerald-500" size={20} />
+                                    <div className="flex rounded-lg border bg-white p-0.5 text-xs">
+                                        {([
+                                            { key: "today", label: "Today" },
+                                            { key: "yesterday", label: "Yesterday" },
+                                            { key: 7, label: "7 days" },
+                                            { key: 30, label: "30 days" },
+                                        ] as const).map((opt) => (
+                                            <button
+                                                key={opt.key}
+                                                onClick={() => setOhRange(opt.key)}
+                                                className={`whitespace-nowrap rounded-md px-2 py-1 font-medium ${ohRange === opt.key ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
+                                {orderHealth?.note && (
+                                    <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{orderHealth.note}</p>
+                                )}
                                 {!orderHealth || orderHealth.total_orders === 0 ? (
-                                    <p className="text-xs text-slate-400">{loading ? "Loading…" : "No orders in this window yet."}</p>
+                                    <p className="text-xs text-slate-400">{ohLoading ? "Loading from Shopify…" : orderHealth ? "No orders in this window yet." : "Couldn't load order health."}</p>
                                 ) : (
-                                    <div className="grid gap-4 sm:grid-cols-4">
+                                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                                         {[
                                             { label: "Paid", data: orderHealth.paid, color: "bg-emerald-500", text: "text-emerald-600" },
-                                            { label: "Refunded", data: orderHealth.refunded, color: "bg-amber-500", text: "text-amber-600" },
+                                            { label: "Partially refunded", data: orderHealth.partially_refunded, color: "bg-amber-400", text: "text-amber-600" },
+                                            { label: "Fully refunded", data: orderHealth.refunded, color: "bg-orange-500", text: "text-orange-600" },
                                             { label: "Cancelled", data: orderHealth.cancelled, color: "bg-red-500", text: "text-red-600" },
-                                            { label: "Pending", data: orderHealth.pending, color: "bg-slate-400", text: "text-slate-500" },
+                                            { label: "Pending payment", data: orderHealth.pending, color: "bg-slate-400", text: "text-slate-500" },
                                         ].map((s) => (
                                             <div key={s.label} className="rounded-xl border border-slate-100 p-4">
                                                 <p className="text-xs text-slate-500">{s.label}</p>
                                                 <p className={`mt-1 text-xl font-bold ${s.text}`}>{s.data.pct}%</p>
-                                                <p className="cro-note text-xs text-slate-400">{s.data.count} of {orderHealth.total_orders} orders</p>
+                                                <p className="text-xs text-slate-500">{s.data.count.toLocaleString()} of {orderHealth.total_orders.toLocaleString()} orders</p>
                                                 <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
                                                     <div className={`h-full rounded-full ${s.color}`} style={{ width: `${Math.max(s.data.pct, 2)}%` }} />
                                                 </div>
@@ -1276,9 +1308,6 @@ function Dashboard() {
                                         ))}
                                     </div>
                                 )}
-                                <p className="cro-note mt-4 text-xs text-slate-400">
-                                    A rising refund or cancellation rate is often an early sign of checkout friction, payment issues, or a stock/fulfillment problem.
-                                </p>
                             </section>
 
 

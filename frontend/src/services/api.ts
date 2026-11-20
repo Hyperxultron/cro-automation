@@ -497,10 +497,17 @@ export type SalesBreakdown = {
   note: string;
 };
 
+export type OrderHealthRange = "today" | "yesterday" | 7 | 30;
+
 export type OrderHealth = {
   days: number;
+  period: string;
+  window_label: string;
+  source: "shopify" | "synced_orders";
+  note: string | null;
   total_orders: number;
   paid: { count: number; pct: number };
+  partially_refunded: { count: number; pct: number };
   refunded: { count: number; pct: number };
   cancelled: { count: number; pct: number };
   pending: { count: number; pct: number };
@@ -573,7 +580,8 @@ export const api = {
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
   recommendations: () => request<{ recommendations: Recommendation[] }>("/dashboard/recommendations"),
   benchmarks: () => request<Benchmarks>("/dashboard/benchmarks"),
-  orderHealth: (days = 30) => request<OrderHealth>(`/dashboard/order-health?days=${days}`),
+  orderHealth: (range: OrderHealthRange = 30) =>
+    request<OrderHealth>(`/dashboard/order-health?${typeof range === "number" ? `days=${range}` : `period=${range}`}`),
   overview: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
     request<Overview>(`/dashboard/overview?period=${period}&compare=${compare}`),
   salesTrend: (days = 14, includeToday = false) =>

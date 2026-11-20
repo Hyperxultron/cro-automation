@@ -22,7 +22,7 @@ export const HELP = {
     ordersTrend: "Orders per day for the last 7 days, in the store's timezone.",
     funnel:
         "How many visitors made it through each step to a purchase. \"% of previous step\" shows where people drop off. Green/red pts = better/worse than the same weekday last week.",
-    orderHealth: "Share of the last 30 days' orders that were paid, refunded, cancelled or still pending.",
+    orderHealth: "Orders placed in the chosen dates, grouped by their payment status right now in Shopify (test orders left out). An order refunded later still counts on the day it was placed, so this won't match Shopify's sales report, which books refunds on the refund date.",
     tooEarly:
         "\"Too early to compare\" means there isn't enough data yet (fewer than ~20 orders or ~500 sessions), so a % change would mostly be luck.",
     deviceSplit: "Same numbers split by mobile, desktop and tablet. Look for one device converting much lower than the others.",

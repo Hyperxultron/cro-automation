@@ -209,17 +209,17 @@ def build_recommendations(db: Session, store: models.Store) -> list[dict]:
     try:
         health = fetch_order_health(db, store, days=30)
         if health["total_orders"] >= 10:
-            refund_pct = health["refunded"]["pct"]
+            refund_pct = health["any_refund"]["pct"]
             cancel_pct = health["cancelled"]["pct"]
             if refund_pct >= 10:
                 recs.append({
                     "title": "Refund rate is higher than usual",
                     "explanation": (
                         f"{refund_pct}% of orders in the last 30 days were refunded "
-                        f"({health['refunded']['count']} of {health['total_orders']}). This can point to "
+                        f"({health['any_refund']['count']} of {health['total_orders']}). This can point to "
                         "product quality, sizing/description mismatches, or shipping damage."
                     ),
-                    "evidence": f"Refunded: {health['refunded']['count']} of {health['total_orders']} orders (last 30 days)",
+                    "evidence": f"Refunded: {health['any_refund']['count']} of {health['total_orders']} orders (last 30 days)",
                     "priority": "High" if refund_pct >= 20 else "Medium",
                     "suggested_action": "Check recent refund reasons and product reviews for quality or sizing complaints.",
                     "affected_metric": "Refund Rate",
