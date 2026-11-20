@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 import EChart, { FONT, tipBase, useOceanTheme } from "../../components/EChart";
 import InfoTip from "../../components/InfoTip";
-import { api, formatMoney, type BuyHeatmap, type SegmentSplit } from "../../services/api";
+import { api, formatMoney, type BuyHeatmap, type OverviewTrends, type SegmentSplit } from "../../services/api";
 
 const hexA = (hex: string, a: number) => {
     const n = parseInt(hex.slice(1), 16);
@@ -271,5 +271,152 @@ export function TrafficSourcesCard() {
                 </div>
             )}
         </section>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Shopify-style Overview extras: AOV over time, sessions over time, total
+// sales by sales channel - one range switch for the row.
+// ---------------------------------------------------------------------------
+function TrendLine({ data, field, money, currency }: {
+    data: OverviewTrends;
+    field: "aov" | "sessions";
+    money: boolean;
+    currency: string | null | undefined;
+}) {
+    const t = useOceanTheme();
+    const option = useMemo<EChartsOption>(() => {
+        const fmt = (v: number | null | undefined) => (v == null ? "no data" : money ? formatMoney(v, currency) : v.toLocaleString());
+        const axisLabel = { color: t.muted, fontFamily: FONT, fontSize: 11 };
+        const cur = data.current.map((r) => r[field]);
+        const prev = data.previous.map((r) => r[field]);
+        return {
+            animationDuration: 400,
+            grid: { left: 6, right: 12, top: 14, bottom: 6, containLabel: true },
+            tooltip: {
+                ...tipBase(t), trigger: "axis", axisPointer: { type: "line", lineStyle: { color: t.axis } },
+                formatter: (ps: unknown) => {
+                    const i = (ps as { dataIndex: number }[])[0]?.dataIndex ?? 0;
+                    return `<div style="font-weight:600;color:${t.main}">${niceDate(data.current[i]?.date)}: ${fmt(cur[i])}</div>`
+                        + `<div style="color:${t.muted};margin-top:2px">${niceDate(data.previous[i]?.date)}: ${fmt(prev[i])}</div>`;
+                },
+            },
+            xAxis: {
+                type: "category", boundaryGap: false,
+                data: data.current.map((r) => new Date(`${r.date}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })),
+                axisLine: { lineStyle: { color: t.axis } }, axisTick: { show: false }, axisLabel,
+            },
+            yAxis: {
+                type: "value", scale: field === "aov",
+                splitLine: { lineStyle: { color: t.grid, type: "dashed" } },
+                axisLabel: { ...axisLabel, formatter: (v: number) => (money ? `$${Math.round(v)}` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v}`) },
+            },
+            series: [
+                { name: "Previous", type: "line", data: prev, symbol: "none", lineStyle: { color: t.prev, width: 1.5, type: [5, 4] } },
+                {
+                    name: "This period", type: "line", data: cur, smooth: true, symbol: "circle", symbolSize: 5, showSymbol: cur.length <= 31,
+                    lineStyle: { color: t.main, width: 2.6 }, itemStyle: { color: t.main },
+                    areaStyle: { color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: hexA(t.main, 0.25) }, { offset: 1, color: hexA(t.main, 0.02) }] } },
+                },
+            ],
+        };
+    }, [data, field, money, currency, t]);
+    return <EChart option={option} height={220} />;
+}
+
+function Change({ cur, prev }: { cur: number | null; prev: number | null }) {
+    if (cur == null || prev == null || prev === 0) return null;
+    const pct = ((cur - prev) / prev) * 100;
+    const up = pct >= 0;
+    return (
+        <span className={`rounded-md px-1.5 py-0.5 text-xs font-semibold ${up ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+            {up ? "▲" : "▼"} {up ? "+" : ""}{pct.toFixed(1)}%
+        </span>
+    );
+}
+
+export function OverviewTrendsRow({ currency }: { currency: string | null | undefined }) {
+    const t = useOceanTheme();
+    const [days, setDays] = useState<7 | 14 | 30>(14);
+    const [data, setData] = useState<OverviewTrends | null>(null);
+    const [err, setErr] = useState<string | null>(null);
+    useEffect(() => {
+        let alive = true;
+        setData(null);
+        setErr(null);
+        api.overviewTrends(days).then((d) => alive && setData(d)).catch((e) => alive && setErr(e instanceof Error ? e.message : "unavailable"));
+        return () => { alive = false; };
+    }, [days]);
+
+    const channelOption = useMemo<EChartsOption | null>(() => {
+        if (!data || !data.channels.length) return null;
+        const rows = [...data.channels].reverse();
+        return {
+            grid: { left: 6, right: 70, top: 6, bottom: 6, containLabel: true },
+            tooltip: {
+                ...tipBase(t), trigger: "axis", axisPointer: { type: "shadow" },
+                formatter: (ps: unknown) => {
+                    const r = rows[(ps as { dataIndex: number }[])[0]?.dataIndex ?? 0];
+                    return `<b>${r.channel}</b><br/>${formatMoney(r.total_sales, currency)} · ${r.orders.toLocaleString()} orders · ${r.share ?? "—"}%`;
+                },
+            },
+            xAxis: { type: "value", show: false },
+            yAxis: { type: "category", data: rows.map((r) => r.channel), axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: t.text, fontFamily: FONT, fontSize: 12 } },
+            series: [{
+                type: "bar", data: rows.map((r) => r.total_sales), barMaxWidth: 22,
+                itemStyle: { color: t.main, borderRadius: [0, 6, 6, 0] },
+                label: { show: true, position: "right", color: t.muted, fontFamily: FONT, fontSize: 11, formatter: (p: unknown) => `${rows[(p as { dataIndex: number }).dataIndex].share ?? "—"}%` },
+            }],
+        };
+    }, [data, t, currency]);
+
+    const tabs = (
+        <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
+            {([7, 14, 30] as const).map((d) => (
+                <button key={d} onClick={() => setDays(d)}
+                    className={`whitespace-nowrap rounded-md px-2 py-1 font-medium ${days === d ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                    {d} days
+                </button>
+            ))}
+        </div>
+    );
+    const head = (title: string, value: string, cur: number | null, prev: number | null) => (
+        <div className="mb-3">
+            <h3 className="font-bold text-slate-900">{title}</h3>
+            <p className="mt-0.5 text-xs text-slate-500">{data ? data.window_label : "Loading…"}</p>
+            <div className="mt-2 flex items-center gap-2">
+                <p className="text-2xl font-bold tracking-tight text-slate-900">{value}</p>
+                <Change cur={cur} prev={prev} />
+                {data && <span className="text-xs text-slate-400">vs {data.previous_label}</span>}
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-bold text-slate-900">Store trends</h3>
+                {tabs}
+            </div>
+            {err && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Couldn't load from Shopify: {err}</div>}
+            <div className="grid gap-6 xl:grid-cols-3">
+                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+                    {head("Average order value", data?.aov.current != null ? formatMoney(data.aov.current, currency) : "—", data?.aov.current ?? null, data?.aov.previous ?? null)}
+                    {data ? (data.errors.aov ? <p className="text-xs text-slate-400">Not available right now.</p> : <TrendLine data={data} field="aov" money currency={currency} />) : <div className="h-[220px]" />}
+                </section>
+                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+                    {head("Sessions", data?.sessions.current != null ? data.sessions.current.toLocaleString() : "—", data?.sessions.current ?? null, data?.sessions.previous ?? null)}
+                    {data ? (data.errors.sessions ? <p className="text-xs text-slate-400">Not available right now.</p> : <TrendLine data={data} field="sessions" money={false} currency={currency} />) : <div className="h-[220px]" />}
+                </section>
+                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+                    <div className="mb-3">
+                        <h3 className="font-bold text-slate-900">Total sales by sales channel</h3>
+                        <p className="mt-0.5 text-xs text-slate-500">{data ? data.window_label : "Loading…"}</p>
+                        <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{data ? formatMoney(data.channels_total, currency) : "—"}</p>
+                    </div>
+                    {data ? (channelOption ? <EChart option={channelOption} height={Math.max(120, data.channels.length * 44)} /> : <p className="text-xs text-slate-400">{data.errors.channels ? "Not available right now." : "No sales in these dates."}</p>) : <div className="h-[220px]" />}
+                </section>
+            </div>
+        </div>
     );
 }

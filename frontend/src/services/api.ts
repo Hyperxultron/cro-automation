@@ -186,6 +186,19 @@ export type Recommendation = {
   status_updated_at: string | null;
 };
 
+export type OverviewTrends = {
+  days: number;
+  window_label: string;
+  previous_label: string;
+  current: { date: string; aov: number | null; orders: number; sessions: number | null }[];
+  previous: { date: string; aov: number | null; orders: number; sessions: number | null }[];
+  aov: { current: number | null; previous: number | null };
+  sessions: { current: number | null; previous: number | null };
+  channels: { channel: string; total_sales: number; orders: number; share: number | null }[];
+  channels_total: number;
+  errors: Record<string, string>;
+};
+
 export type DiscountStats = {
   orders: number;
   net_sales: number;
@@ -219,6 +232,28 @@ export type DeeperData = {
     multi_product_orders: number;
     multi_share: number | null;
   } | null;
+  new_vs_returning: {
+    orders_with_journey: number;
+    orders_total: number;
+    new: { orders: number; share_of_orders: number; net_sales: number; aov: number | null };
+    returning: { orders: number; share_of_orders: number; net_sales: number; aov: number | null };
+    first_order: {
+      median_visits: number | null;
+      median_days: number | null;
+      visits: { label: string; orders: number; share: number }[];
+      days: { label: string; orders: number; share: number }[];
+      with_visits: number;
+      with_days: number;
+    };
+  } | null;
+  repeat_purchase: {
+    first_time_buyers: number;
+    came_back: number;
+    repeat_rate: number;
+    min_buyers: number;
+    rows: { product: string; first_time_buyers: number; came_back: number; repeat_rate: number }[];
+  } | null;
+  customer_data?: { journey: boolean; customers: boolean };
 };
 
 export type ExperimentMetric = "conversion_rate" | "added_to_cart_rate" | "bounce_rate" | "aov";
@@ -687,6 +722,7 @@ export const api = {
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
   recommendations: (range: RecRange = 30) =>
     request<Recommendations>(`/dashboard/recommendations?${range === "yesterday" ? "period=yesterday" : `days=${range}`}`),
+  overviewTrends: (days: 7 | 14 | 30) => request<OverviewTrends>(`/dashboard/overview-trends?days=${days}`),
   deeper: (days: 7 | 30 | 60) => request<DeeperData>(`/dashboard/deeper?days=${days}`),
   experiments: () =>
     request<{ metrics: { key: ExperimentMetric; label: string; unit: string; better: "up" | "down" }[]; experiments: Experiment[] }>(

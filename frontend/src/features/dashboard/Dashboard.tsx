@@ -9,7 +9,7 @@ import AlarmRules from "../alarms/AlarmRules";
 import AlertHistory from "../alarms/AlertHistory";
 import SettingsPage from "../settings/Settings";
 import StoreIntegration from "../store/StoreIntegration";
-import { BuyHeatmapCard, SalesOverTimeChart, TrafficSourcesCard } from "./OceanCharts";
+import { BuyHeatmapCard, OverviewTrendsRow, SalesOverTimeChart, TrafficSourcesCard } from "./OceanCharts";
 import CroRecommendations from "../recommendations/CroRecommendations";
 import Experiments, { type ExperimentPrefill } from "../experiments/Experiments";
 import DeeperAnalyses from "../analytics/DeeperAnalyses";
@@ -1093,6 +1093,8 @@ function Dashboard() {
                                     <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm bg-blue-300" /> today so far</span>
                                 </div>
                             </section>
+
+                            <OverviewTrendsRow currency={currency} />
 
                             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
                                 <BuyHeatmapCard />

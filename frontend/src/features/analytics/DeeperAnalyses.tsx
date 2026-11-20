@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Layers, Tag, Tags } from "lucide-react";
+import { Layers, Repeat, Tag, Tags, UserPlus } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import EChart, { FONT, tipBase, useOceanTheme } from "../../components/EChart";
 import { BuyHeatmapCard } from "../dashboard/OceanCharts";
@@ -201,6 +201,113 @@ function BoughtTogether({ data }: { data: NonNullable<DeeperData["bought_togethe
   );
 }
 
+function Hist({ title, rows, color }: { title: string; rows: { label: string; orders: number; share: number }[]; color: string }) {
+  const max = Math.max(1, ...rows.map((r) => r.share));
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{title}</p>
+      <div className="space-y-2">
+        {rows.map((r) => (
+          <div key={r.label} className="grid grid-cols-[90px_1fr_70px] items-center gap-3 text-sm">
+            <span className="text-slate-600">{r.label}</span>
+            <div className="h-2.5 rounded-full bg-slate-100">
+              <div className={`h-full rounded-full ${color}`} style={{ width: `${(r.share / max) * 100}%` }} />
+            </div>
+            <span className="text-right tabular-nums text-slate-700">{r.share}% <span className="text-xs text-slate-400">{r.orders}</span></span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NewVsReturning({ data }: { data: NonNullable<DeeperData["new_vs_returning"]> }) {
+  const f = data.first_order;
+  const tile = (label: string, s: typeof data.new, cls: string) => (
+    <div className={`kpi-tile ${cls} rounded-2xl p-5 shadow-sm`}>
+      <p className="relative text-sm font-medium text-white/90">{label}</p>
+      <p className="relative mt-2 text-3xl font-semibold tracking-tight text-white">{s.share_of_orders}%</p>
+      <p className="relative text-xs text-white/80">of orders</p>
+      <div className="relative mt-3 flex flex-wrap gap-2 text-xs font-semibold text-white">
+        <span className="kpi-chip">{s.orders.toLocaleString()} orders</span>
+        <span className="kpi-chip">AOV {money(s.aov, 2)}</span>
+        <span className="kpi-chip">{money(s.net_sales)} net sales</span>
+      </div>
+    </div>
+  );
+  return (
+    <>
+      <div className="grid gap-4 md:grid-cols-2">
+        {tile("New customers (first order)", data.new, "kpi-blue")}
+        {tile("Returning customers", data.returning, "kpi-rose")}
+      </div>
+      <div className="mt-5 grid gap-6 lg:grid-cols-2">
+        <div className="rounded-xl border border-slate-100 p-4">
+          <p className="text-sm text-slate-600">
+            Visits before a first order: median <b className="text-slate-900">{f.median_visits ?? "—"}</b>
+          </p>
+          <div className="mt-3"><Hist title={`${f.with_visits.toLocaleString()} first orders`} rows={f.visits} color="bg-sky-500" /></div>
+        </div>
+        <div className="rounded-xl border border-slate-100 p-4">
+          <p className="text-sm text-slate-600">
+            Days from first visit to first order: median <b className="text-slate-900">{f.median_days ?? "—"}</b>
+          </p>
+          <div className="mt-3"><Hist title={`${f.with_days.toLocaleString()} first orders`} rows={f.days} color="bg-teal-500" /></div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function RepeatPurchase({ data }: { data: NonNullable<DeeperData["repeat_purchase"]> }) {
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <p className="text-3xl font-bold tracking-tight text-slate-900">{data.repeat_rate}%</p>
+        <p className="text-sm text-slate-600">
+          of {data.first_time_buyers.toLocaleString()} first-time buyers have ordered again ({data.came_back.toLocaleString()} customers)
+        </p>
+      </div>
+      {data.rows.length === 0 ? (
+        <p className="text-sm text-slate-500">No product had {data.min_buyers}+ first-time buyers in these dates.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs text-slate-400">
+                <th className="py-2 pr-4 font-medium">First product bought</th>
+                <th className="py-2 pr-4 text-right font-medium">First-time buyers</th>
+                <th className="py-2 pr-4 text-right font-medium">Came back</th>
+                <th className="py-2 text-right font-medium">Repeat rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((r) => {
+                const good = r.repeat_rate >= data.repeat_rate;
+                return (
+                  <tr key={r.product} className="border-b border-slate-50 last:border-0">
+                    <td className="py-2.5 pr-4 font-medium text-slate-800">{r.product}</td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums text-slate-600">{r.first_time_buyers.toLocaleString()}</td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums text-slate-600">{r.came_back.toLocaleString()}</td>
+                    <td className="py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="hidden h-1.5 w-24 rounded-full bg-slate-100 sm:block">
+                          <div className={`h-full rounded-full ${good ? "bg-emerald-500" : "bg-amber-400"}`} style={{ width: `${Math.min(r.repeat_rate, 100)}%` }} />
+                        </div>
+                        <span className={`font-semibold tabular-nums ${good ? "text-emerald-600" : "text-slate-700"}`}>{r.repeat_rate}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
 function DeeperAnalyses() {
   const [range, setRange] = useState<Range>(30);
   const [data, setData] = useState<DeeperData | null>(null);
@@ -270,6 +377,30 @@ function DeeperAnalyses() {
             sub={data.bought_together ? <>{wl} · top 20 pairs · {data.bought_together.multi_product_orders.toLocaleString()} of {data.bought_together.orders.toLocaleString()} orders ({data.bought_together.multi_share}%) had 2+ products · lift 2× = bought together twice as often as chance</> : wl}
           >
             {data.bought_together ? <BoughtTogether data={data.bought_together} /> : <p className="text-sm text-slate-500">Couldn't load orders.</p>}
+          </Card>
+
+          <Card
+            icon={UserPlus}
+            title="New vs returning customers"
+            sub={data.new_vs_returning ? <>{wl} · {data.new_vs_returning.orders_with_journey.toLocaleString()} orders with customer journey data from Shopify</> : wl}
+          >
+            {data.new_vs_returning ? <NewVsReturning data={data.new_vs_returning} /> : (
+              <p className="text-sm text-slate-500">Shopify didn't share customer journey data with the app, so this can't be shown yet.</p>
+            )}
+          </Card>
+
+          <Card
+            icon={Repeat}
+            title="Repeat purchase by first product"
+            sub={data.repeat_purchase ? <>First orders placed {wl} · came back = ordered again by today · products with {data.repeat_purchase.min_buyers}+ first-time buyers</> : wl}
+          >
+            {data.repeat_purchase ? <RepeatPurchase data={data.repeat_purchase} /> : (
+              <p className="text-sm text-slate-500">
+                {data.customer_data?.customers === false
+                  ? "The Shopify app needs permission to read customers (read_customers) to show this."
+                  : "No first-time buyers in these dates."}
+              </p>
+            )}
           </Card>
         </>
       )}

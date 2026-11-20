@@ -37,6 +37,7 @@ from shopify_sync import ensure_fresh_orders
 from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
 from deeper import fetch_deeper
+from overview_trends import fetch_overview_trends
 from experiments import METRICS as EXPERIMENT_METRICS, delete_experiment, list_experiments, save_experiment
 from change_log import list_change_log, create_change_log_entry, delete_change_log_entry, VALID_AREAS
 from shopify_sync import sync_store
@@ -897,3 +898,18 @@ def deeper(
     except Exception as exc:
         logger.exception("Deeper analyses failed")
         raise HTTPException(status_code=502, detail=f"Shopify error: {str(exc)[:300]}")
+
+
+@router.get("/overview-trends")
+def overview_trends(
+    days: int = Query(14, ge=7, le=60),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """AOV over time, sessions over time and sales by channel (Shopify Overview widgets)."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_overview_trends(store, days=days)
+    except Exception as exc:
+        logger.exception("Overview trends failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")

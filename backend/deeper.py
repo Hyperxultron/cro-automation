@@ -51,10 +51,20 @@ query DeepOrders($cursor: String, $search: String) {
       lineItems(first: 15) {
         nodes { quantity product { id title } }
       }
+      %EXTRA%
     }
   }
 }
 """
+
+# New vs returning needs the order's customer journey; repeat purchase needs
+# the customer's order count (read_customers). If the app can't read one of
+# them, Shopify refuses the whole query, so we step down to a smaller one and
+# say which parts aren't available.
+JOURNEY = "customerJourneySummary { ready customerOrderIndex daysToConversion momentsCount { count } }"
+CUSTOMER = "customer { id numberOfOrders }"
+VARIANTS = [("full", f"{JOURNEY} {CUSTOMER}"), ("journey", JOURNEY), ("basic", "")]
+_variant: dict = {}
 
 PRODUCTS_QUERY = """
 query DeepProducts($cursor: String) {
@@ -87,10 +97,24 @@ def _pull_orders(store: models.Store, first, last) -> list[dict]:
     search = (f"created_at:>='{start.astimezone(timezone.utc).strftime(fmt)}' "
               f"created_at:<'{end.astimezone(timezone.utc).strftime(fmt)}'")
 
+    def page(cursor):
+        start_at = _variant.get(store.store_url, 0)
+        for i in range(start_at, len(VARIANTS)):
+            q = ORDERS_QUERY.replace("%EXTRA%", VARIANTS[i][1])
+            try:
+                data = graphql(store.store_url, q, {"cursor": cursor, "search": search})["orders"]
+                _variant[store.store_url] = i
+                return data
+            except Exception as exc:
+                if i == len(VARIANTS) - 1 or cursor is not None:
+                    raise
+                logger.warning("Deeper: order query '%s' refused, trying a smaller one: %s", VARIANTS[i][0], exc)
+        raise RuntimeError("unreachable")
+
     def load():
         out, cursor = [], None
         for _ in range(400):  # 20,000 orders max
-            data = graphql(store.store_url, ORDERS_QUERY, {"cursor": cursor, "search": search})["orders"]
+            data = page(cursor)
             for n in data["nodes"]:
                 if n.get("test") or n.get("cancelledAt"):
                     continue
@@ -99,7 +123,15 @@ def _pull_orders(store: models.Store, first, last) -> list[dict]:
                     p = li.get("product")
                     if p:
                         prods[p["id"]] = p["title"]
+                j = n.get("customerJourneySummary") or {}
+                cust = n.get("customer") or {}
                 out.append({
+                    "created": n.get("createdAt"),
+                    "order_index": j.get("customerOrderIndex") if j.get("ready") is not False else None,
+                    "days_to_conversion": j.get("daysToConversion"),
+                    "visits": ((j.get("momentsCount") or {}).get("count")) if j else None,
+                    "customer": cust.get("id"),
+                    "customer_orders": int(cust["numberOfOrders"]) if cust.get("numberOfOrders") is not None else None,
                     "codes": [c.strip().upper() for c in (n.get("discountCodes") or []) if c and c.strip()],
                     "subtotal": float(n["currentSubtotalPriceSet"]["shopMoney"]["amount"]),
                     "discount": float(n["currentTotalDiscountsSet"]["shopMoney"]["amount"]),
@@ -253,6 +285,83 @@ def _pairs(orders: list[dict], limit: int = 20) -> dict:
             "multi_share": round(multi / n * 100, 1) if n else None}
 
 
+def _median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    return (xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2) if n else None
+
+
+def _new_vs_returning(orders: list[dict]) -> dict | None:
+    known = [o for o in orders if o.get("order_index")]
+    if not known:
+        return None
+    new = [o for o in known if o["order_index"] == 1]
+    ret = [o for o in known if o["order_index"] > 1]
+
+    def stats(g):
+        n = len(g)
+        sub = sum(o["subtotal"] for o in g)
+        return {"orders": n, "share_of_orders": round(n / len(known) * 100, 1), "net_sales": round(sub, 2),
+                "aov": round(sub / n, 2) if n else None}
+
+    visits = [o["visits"] for o in new if o.get("visits")]
+    days = [o["days_to_conversion"] for o in new if o.get("days_to_conversion") is not None]
+    v_buckets = [("1 visit", 1, 1), ("2 visits", 2, 2), ("3-5 visits", 3, 5), ("6+ visits", 6, None)]
+    d_buckets = [("Same day", 0, 0), ("1-3 days", 1, 3), ("4-7 days", 4, 7), ("8-30 days", 8, 30), ("31+ days", 31, None)]
+
+    def hist(vals, buckets):
+        n = len(vals)
+        return [{"label": lab, "orders": c, "share": round(c / n * 100, 1) if n else 0}
+                for lab, lo, hi in buckets
+                for c in [sum(1 for v in vals if v >= lo and (hi is None or v <= hi))]]
+
+    return {
+        "orders_with_journey": len(known),
+        "orders_total": len(orders),
+        "new": stats(new),
+        "returning": stats(ret),
+        "first_order": {
+            "median_visits": _median(visits),
+            "median_days": _median(days),
+            "visits": hist(visits, v_buckets),
+            "days": hist(days, d_buckets),
+            "with_visits": len(visits),
+            "with_days": len(days),
+        },
+    }
+
+
+def _repeat_by_first_product(orders: list[dict], min_buyers: int = 5) -> dict | None:
+    """First-time buyers in the window, grouped by the products in that first
+    order: share who have ordered again by now (customer's order count > 1)."""
+    firsts = [o for o in orders if o.get("order_index") == 1 and o.get("customer") and o.get("customer_orders") is not None]
+    if not firsts:
+        return None
+    by_pid: dict[str, dict] = {}
+    titles: dict[str, str] = {}
+    for o in firsts:
+        again = o["customer_orders"] > 1
+        for pid, title in o["products"].items():
+            titles[pid] = title
+            x = by_pid.setdefault(pid, {"buyers": 0, "repeat": 0})
+            x["buyers"] += 1
+            x["repeat"] += 1 if again else 0
+    overall_rep = sum(1 for o in firsts if o["customer_orders"] > 1)
+    rows = [
+        {"product": titles[pid], "first_time_buyers": x["buyers"], "came_back": x["repeat"],
+         "repeat_rate": round(x["repeat"] / x["buyers"] * 100, 1)}
+        for pid, x in by_pid.items() if x["buyers"] >= min_buyers
+    ]
+    rows.sort(key=lambda r: (-r["repeat_rate"], -r["first_time_buyers"]))
+    return {
+        "first_time_buyers": len(firsts),
+        "came_back": overall_rep,
+        "repeat_rate": round(overall_rep / len(firsts) * 100, 1),
+        "min_buyers": min_buyers,
+        "rows": rows[:20],
+    }
+
+
 def fetch_deeper(db: Session, store: models.Store, days: int = 30) -> dict:
     first, last, _, _, window_label, _ = period_windows(store, days, None)
     errors = {}
@@ -273,4 +382,11 @@ def fetch_deeper(db: Session, store: models.Store, days: int = 30) -> dict:
         out["price_bands"] = None
     out["discounts"] = _discounts(orders) if "orders" not in errors else None
     out["bought_together"] = _pairs(orders) if "orders" not in errors else None
+    variant = VARIANTS[_variant.get(store.store_url, 0)][0] if orders else None
+    out["new_vs_returning"] = _new_vs_returning(orders) if variant in ("full", "journey") else None
+    out["repeat_purchase"] = _repeat_by_first_product(orders) if variant == "full" else None
+    out["customer_data"] = {
+        "journey": variant in ("full", "journey"),
+        "customers": variant == "full",
+    }
     return out
