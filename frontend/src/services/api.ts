@@ -661,8 +661,9 @@ export type KpiRange = "today" | "yesterday" | "last30";
 
 export type KpiTotals = {
   labels: Record<KpiRange, string>;
-  sales: Record<KpiRange, number | null> & { source: string | null };
-  sessions: Record<KpiRange, number | null> & { source: string | null; error?: string };
+  compare_labels?: Record<KpiRange, string | null>;
+  sales: Record<KpiRange, number | null> & { source: string | null; previous?: Record<KpiRange, number | null> };
+  sessions: Record<KpiRange, number | null> & { source: string | null; error?: string; previous?: Record<KpiRange, number | null> };
 };
 
 export type ChangeLogArea = "theme" | "app" | "price" | "promo" | "ad" | "other";

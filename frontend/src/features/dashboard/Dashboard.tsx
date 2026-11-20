@@ -25,7 +25,7 @@ import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
-    Bell, Moon, Sun, Clock3, DollarSign, FileText, FlaskConical, Gauge, Globe, History, IndianRupee, LayoutDashboard,
+    Bell, ChevronDown, Moon, Sun, Clock3, DollarSign, FileText, FlaskConical, Gauge, Globe, History, IndianRupee, LayoutDashboard,
     Lightbulb, Menu, Microscope, Package, RefreshCw, Route, Settings, ShieldCheck,
     ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
@@ -166,6 +166,16 @@ function Dashboard() {
     const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
     // Total Sales / Total Sessions tiles: Today / Yesterday / Last 30 days.
     const [kpiTotals, setKpiTotals] = useState<KpiTotals | null>(null);
+    // Overview "More details" panel - remembered per browser (closed by default).
+    const [showMore, setShowMoreState] = useState<boolean>(() => {
+        try { return localStorage.getItem("cro.overview.more") === "1"; } catch { return false; }
+    });
+    const setShowMore = (f: (v: boolean) => boolean) =>
+        setShowMoreState((v) => {
+            const n = f(v);
+            try { localStorage.setItem("cro.overview.more", n ? "1" : "0"); } catch { /* ignore */ }
+            return n;
+        });
     const [salesRange, setSalesRange] = useState<KpiRange>("today");
     const [sessRange, setSessRange] = useState<KpiRange>("today");
     // Top Selling Products card: its own Today / Yesterday / 7 days switch, always top 5.
@@ -828,6 +838,20 @@ function Dashboard() {
                                         return d.revenue != null && s ? d.revenue / s : null;
                                     });
                                     const money2 = (v: number) => formatMoney(v, currency);
+                                    // Total Sales / Total Sessions tiles: change vs the same weekday last
+                                    // week (yesterday) or the 30 days before (last 30). None for today.
+                                    const rangeChange = (cur: number | null | undefined, prev: number | null | undefined, money: boolean, tooEarly = false) => {
+                                        if (cur == null || prev == null || prev === 0 || tooEarly) return { text: "", tone: "slate", showArrow: false };
+                                        const abs = Math.round((cur - prev) * 100) / 100;
+                                        const pct = Math.round(((cur - prev) / prev) * 1000) / 10;
+                                        const text = money ? moneyChangeBothWays(abs, pct, currency) : changeBothWays(Math.round(abs), pct);
+                                        return { text, tone: pct >= 0 ? "emerald" : "red", showArrow: pct !== 0 };
+                                    };
+                                    const withCompare = (r: KpiRange) => {
+                                        const l = kpiTotals?.labels[r];
+                                        const c = kpiTotals?.compare_labels?.[r];
+                                        return l ? (c ? `${l} · ${c}` : l) : "…";
+                                    };
                                     const cards: {
                                         label: string; period: string; value: string; icon: typeof Bell; color: string;
                                         change: { text: string; tone: string; showArrow: boolean }; note: string;
@@ -890,18 +914,18 @@ function Dashboard() {
                                         },
                                         {
                                             label: "Total Sales", help: "Shopify's Total sales (after discounts and returns, incl. tax and shipping), same as Shopify Analytics. Switch between today so far, yesterday and the last 30 complete days.",
-                                            period: kpiTotals?.labels[salesRange] ?? "…",
+                                            period: withCompare(salesRange),
                                             value: kpiTotals?.sales[salesRange] != null ? formatMoney(kpiTotals.sales[salesRange] as number, currency) : loading ? "…" : "—",
-                                            change: { text: "", tone: "slate", showArrow: false },
+                                            change: rangeChange(kpiTotals?.sales[salesRange], kpiTotals?.sales.previous?.[salesRange], true),
                                             icon: MoneyIcon, color: "blue",
                                             note: "",
                                             range: { value: salesRange, set: setSalesRange },
                                         },
                                         {
                                             label: "Total Sessions", help: "Visits to the store from Shopify Analytics, bots excluded (same as Shopify's Sessions). Switch between today so far, yesterday and the last 30 complete days.",
-                                            period: kpiTotals?.labels[sessRange] ?? "…",
+                                            period: withCompare(sessRange),
                                             value: kpiTotals?.sessions[sessRange] != null ? (kpiTotals.sessions[sessRange] as number).toLocaleString() : loading ? "…" : "—",
-                                            change: { text: "", tone: "slate", showArrow: false },
+                                            change: rangeChange(kpiTotals?.sessions[sessRange], kpiTotals?.sessions.previous?.[sessRange], false, (kpiTotals?.sessions[sessRange] ?? 0) < MIN_SESSIONS_FOR_COMPARISON),
                                             icon: Users, color: "rose",
                                             note: "",
                                             range: { value: sessRange, set: setSessRange },
@@ -1070,6 +1094,185 @@ function Dashboard() {
                                 </section>
                             </div>
 
+                            <WhereChangedCard currency={currency} />
+
+                            <div className="grid gap-6">
+                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                    <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">Conversion Rate Trend<InfoTip text={HELP.cvrTrend} /></h3>
+                                            <p className="mt-1 text-xs text-slate-400">Daily conversion rate from Shopify Analytics (store timezone) · bars: sessions</p>
+                                        </div>
+                                        <select value={period} onChange={(e) => setPeriod(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none">
+                                            <option>Last 7 days</option>
+                                            <option>Last 30 days</option>
+                                        </select>
+                                    </div>
+                                    <div className="mb-4 flex flex-wrap items-end gap-3">
+                                        <span className="text-3xl font-bold text-slate-900">{latestDay?.cvr != null ? `${latestDay.cvr}%` : "—"}</span>
+                                        {latestDay && (
+                                            <span className="mb-1 text-xs text-slate-400">{formatDay(latestDay.date, true)} ({latestDay.cvr != null ? `~${latestDay.sessions.toLocaleString()} sessions` : "no data"})</span>
+                                        )}
+                                        {trendTooEarly && latestDay ? (
+                                            <span className="mb-1 text-xs font-semibold text-slate-400">Too early to compare</span>
+                                        ) : trendChange && trendChange.pct !== null ? (
+                                            <span className={`mb-1 flex items-center gap-1 text-xs font-semibold ${trendChange.abs === 0 ? "text-slate-400" : trendChange.abs < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                                                {trendChange.abs !== 0 && (trendChange.abs < 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />)}
+                                                {changeBothWays(trendChange.abs, trendChange.pct, " pts")} {lastWeekLabel}
+                                            </span>
+                                        ) : latestDay ? (
+                                            <span className="mb-1 text-xs font-semibold text-slate-400">— {lastWeekLabel}</span>
+                                        ) : null}
+                                    </div>
+                                    {chartData.length === 0 && (
+                                        <p className="mb-2 text-xs text-slate-400">{loading ? "Loading Shopify analytics…" : "No conversion data available for this period."}</p>
+                                    )}
+                                    <div className="h-64 w-full">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <ComposedChart data={chartData}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
+                                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                                <YAxis yAxisId="cvr" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} unit="%" />
+                                                <YAxis yAxisId="sessions" orientation="right" axisLine={false} tickLine={false} tick={{ fill: "#cbd5e1", fontSize: 11 }} />
+                                                <Tooltip
+                                                    contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }}
+                                                    formatter={(value, name) =>
+                                                        name === "sessions"
+                                                            ? [Number(value).toLocaleString(), "Sessions"]
+                                                            : [`${value}%`, name === "cvr" ? "Conversion rate" : "Previous period"]
+                                                    }
+                                                />
+                                                <Bar yAxisId="sessions" dataKey="sessions" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
+                                                <Line yAxisId="cvr" type="linear" dataKey="previousCvr" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} />
+                                                <Line yAxisId="cvr" type="linear" dataKey="cvr" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
+                                                {chartMarkers.map((m) => (
+                                                    <ReferenceLine
+                                                        key={m.id}
+                                                        yAxisId="cvr"
+                                                        x={m.label}
+                                                        stroke="#f59e0b"
+                                                        strokeDasharray="4 3"
+                                                        label={{ value: "●", position: "top", fill: "#f59e0b", fontSize: 10 }}
+                                                    />
+                                                ))}
+                                            </ComposedChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    <p className="cro-note mt-2 text-xs text-slate-400">Solid line with dots: last {periodDays} days · dashed: the {periodDays} days before</p>
+                                    {chartMarkers.length > 0 && (
+                                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                                            {chartMarkers.map((m) => (
+                                                <span key={m.id} className="flex items-center gap-1">
+                                                    <span className="text-amber-500">●</span> {m.label}: {m.change}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </section>
+
+                            </div>
+
+                            <div className="grid gap-6 xl:grid-cols-2">
+                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                    <div className="mb-5 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">Top Selling Products<InfoTip text={HELP.topProducts} /></h3>
+                                            <p className="mt-1 text-xs text-slate-400">
+                                                {topPeriod === "today" ? "Today so far" : topPeriod === "yesterday" ? "Yesterday" : "Last 7 days"}, by revenue
+                                            </p>
+                                        </div>
+                                        <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
+                                            {([
+                                                { key: "today", label: "Today" },
+                                                { key: "yesterday", label: "Yesterday" },
+                                                { key: "last7", label: "7 days" },
+                                            ] as const).map((opt) => (
+                                                <button
+                                                    key={opt.key}
+                                                    onClick={() => setTopPeriod(opt.key)}
+                                                    className={`whitespace-nowrap rounded-md px-2 py-1 font-medium ${topPeriod === opt.key ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                                >
+                                                    {opt.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {topProducts.length === 0 ? (
+                                        <p className="text-xs text-slate-400">{topLoading ? "Loading…" : "No orders yet in this period."}</p>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {topProducts.map((p, i) => (
+                                                <div key={p.name} className="flex items-center gap-3">
+                                                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-500">{i + 1}</div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-semibold text-slate-800">{p.name}</p>
+                                                        <p className="text-xs text-slate-400">{p.quantity} sold{p.category ? ` · ${p.category}` : ""}</p>
+                                                    </div>
+                                                    <p className="shrink-0 text-sm font-bold text-slate-900">{formatMoney(p.revenue, currency)}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </section>
+
+                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                    <div className="mb-5 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">Conversion Funnel<InfoTip text={HELP.funnel} /></h3>
+                                            <p className="mt-1 text-xs text-slate-400">{funnel ? `${funnel.period_label} · ${funnel.compare_label}` : "Loading…"}</p>
+                                        </div>
+                                        <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
+                                            {([
+                                                { key: "today", label: "Today" },
+                                                { key: "yesterday", label: "Yesterday" },
+                                                { key: "last7", label: "7 days" },
+                                            ] as const).map((opt) => (
+                                                <button
+                                                    key={opt.key}
+                                                    onClick={() => setFunnelPeriod(opt.key)}
+                                                    className={`whitespace-nowrap rounded-md px-2 py-1 font-medium ${funnelPeriod === opt.key ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                                >
+                                                    {opt.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="mb-4 flex w-fit rounded-lg border border-slate-200 p-0.5 text-xs">
+                                        {(["All", "Mobile", "Desktop"] as const).map((d) => (
+                                            <button
+                                                key={d}
+                                                onClick={() => setFunnelDevice(d)}
+                                                className={`rounded-md px-2.5 py-1 font-medium ${funnelDevice === d ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                            >
+                                                {d}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {funnelDevice === "All" ? (
+                                        <FunnelBars data={funnel} loading={funnelLoading} compact />
+                                    ) : (
+                                        <DeviceFunnelBars data={deviceFunnel} device={funnelDevice} error={deviceFunnelErr} />
+                                    )}
+                                </section>
+                            </div>
+
+                            {/* "Overview stays small" (checklist section 10): the main cards stay on
+                                top; supporting detail opens on demand and only loads when opened. */}
+                            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowMore((v) => !v)}
+                                    className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+                                >
+                                    <span>
+                                        <span className="block font-bold text-slate-900">More details</span>
+                                        <span className="block text-xs text-slate-500">Daily total sales · AOV, sessions and sales by channel · Order health · Orders last 7 days · Traffic sources · When people buy</span>
+                                    </span>
+                                    <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${showMore ? "rotate-180" : ""}`} />
+                                </button>
+                            </div>
+                            {showMore && (
+                                <>
                             <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                 <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                                     <div>
@@ -1153,194 +1356,6 @@ function Dashboard() {
 
                             <OverviewTrendsRow currency={currency} />
 
-                            <WhereChangedCard currency={currency} />
-
-                            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-                                <BuyHeatmapCard />
-                                <TrafficSourcesCard />
-                            </div>
-
-                            <div className="grid gap-6">
-                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-                                    <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                                        <div>
-                                            <h3 className="font-bold text-slate-900">Conversion Rate Trend<InfoTip text={HELP.cvrTrend} /></h3>
-                                            <p className="mt-1 text-xs text-slate-400">Daily conversion rate from Shopify Analytics (store timezone) · bars: sessions</p>
-                                        </div>
-                                        <select value={period} onChange={(e) => setPeriod(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none">
-                                            <option>Last 7 days</option>
-                                            <option>Last 30 days</option>
-                                        </select>
-                                    </div>
-                                    <div className="mb-4 flex flex-wrap items-end gap-3">
-                                        <span className="text-3xl font-bold text-slate-900">{latestDay?.cvr != null ? `${latestDay.cvr}%` : "—"}</span>
-                                        {latestDay && (
-                                            <span className="mb-1 text-xs text-slate-400">{formatDay(latestDay.date, true)} ({latestDay.cvr != null ? `~${latestDay.sessions.toLocaleString()} sessions` : "no data"})</span>
-                                        )}
-                                        {trendTooEarly && latestDay ? (
-                                            <span className="mb-1 text-xs font-semibold text-slate-400">Too early to compare</span>
-                                        ) : trendChange && trendChange.pct !== null ? (
-                                            <span className={`mb-1 flex items-center gap-1 text-xs font-semibold ${trendChange.abs === 0 ? "text-slate-400" : trendChange.abs < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                                                {trendChange.abs !== 0 && (trendChange.abs < 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />)}
-                                                {changeBothWays(trendChange.abs, trendChange.pct, " pts")} {lastWeekLabel}
-                                            </span>
-                                        ) : latestDay ? (
-                                            <span className="mb-1 text-xs font-semibold text-slate-400">— {lastWeekLabel}</span>
-                                        ) : null}
-                                    </div>
-                                    {chartData.length === 0 && (
-                                        <p className="mb-2 text-xs text-slate-400">{loading ? "Loading Shopify analytics…" : "No conversion data available for this period."}</p>
-                                    )}
-                                    <div className="h-64 w-full">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={chartData}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
-                                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                                                <YAxis yAxisId="cvr" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} unit="%" />
-                                                <YAxis yAxisId="sessions" orientation="right" axisLine={false} tickLine={false} tick={{ fill: "#cbd5e1", fontSize: 11 }} />
-                                                <Tooltip
-                                                    contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }}
-                                                    formatter={(value, name) =>
-                                                        name === "sessions"
-                                                            ? [Number(value).toLocaleString(), "Sessions"]
-                                                            : [`${value}%`, name === "cvr" ? "Conversion rate" : "Previous period"]
-                                                    }
-                                                />
-                                                <Bar yAxisId="sessions" dataKey="sessions" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
-                                                <Line yAxisId="cvr" type="linear" dataKey="previousCvr" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} />
-                                                <Line yAxisId="cvr" type="linear" dataKey="cvr" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
-                                                {chartMarkers.map((m) => (
-                                                    <ReferenceLine
-                                                        key={m.id}
-                                                        yAxisId="cvr"
-                                                        x={m.label}
-                                                        stroke="#f59e0b"
-                                                        strokeDasharray="4 3"
-                                                        label={{ value: "●", position: "top", fill: "#f59e0b", fontSize: 10 }}
-                                                    />
-                                                ))}
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                    <p className="cro-note mt-2 text-xs text-slate-400">Solid line with dots: last {periodDays} days · dashed: the {periodDays} days before</p>
-                                    {chartMarkers.length > 0 && (
-                                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                                            {chartMarkers.map((m) => (
-                                                <span key={m.id} className="flex items-center gap-1">
-                                                    <span className="text-amber-500">●</span> {m.label}: {m.change}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    )}
-                                </section>
-
-                            </div>
-
-                            <div className="grid gap-6 xl:grid-cols-3">
-                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-                                    <div className="mb-5 flex items-center justify-between">
-                                        <div>
-                                            <h3 className="font-bold text-slate-900">Top Selling Products<InfoTip text={HELP.topProducts} /></h3>
-                                            <p className="mt-1 text-xs text-slate-400">
-                                                {topPeriod === "today" ? "Today so far" : topPeriod === "yesterday" ? "Yesterday" : "Last 7 days"}, by revenue
-                                            </p>
-                                        </div>
-                                        <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
-                                            {([
-                                                { key: "today", label: "Today" },
-                                                { key: "yesterday", label: "Yesterday" },
-                                                { key: "last7", label: "7 days" },
-                                            ] as const).map((opt) => (
-                                                <button
-                                                    key={opt.key}
-                                                    onClick={() => setTopPeriod(opt.key)}
-                                                    className={`whitespace-nowrap rounded-md px-2 py-1 font-medium ${topPeriod === opt.key ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                                                >
-                                                    {opt.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    {topProducts.length === 0 ? (
-                                        <p className="text-xs text-slate-400">{topLoading ? "Loading…" : "No orders yet in this period."}</p>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            {topProducts.map((p, i) => (
-                                                <div key={p.name} className="flex items-center gap-3">
-                                                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-500">{i + 1}</div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="truncate text-sm font-semibold text-slate-800">{p.name}</p>
-                                                        <p className="text-xs text-slate-400">{p.quantity} sold{p.category ? ` · ${p.category}` : ""}</p>
-                                                    </div>
-                                                    <p className="shrink-0 text-sm font-bold text-slate-900">{formatMoney(p.revenue, currency)}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </section>
-
-                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-                                    <div className="mb-5 flex items-center justify-between">
-                                        <div>
-                                            <h3 className="font-bold text-slate-900">Orders - Last 7 Days<InfoTip text={HELP.ordersTrend} /></h3>
-                                            <p className="mt-1 text-xs text-slate-400">Daily order count (store timezone)</p>
-                                        </div>
-                                        <Activity className="text-emerald-500" size={20} />
-                                    </div>
-                                    <div className="h-48 w-full">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={ordersTrend.map((d) => ({ day: formatDay(d.date, false), orders: d.orders }))}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
-                                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                                                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} allowDecimals={false} />
-                                                <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
-                                                <Bar dataKey="orders" fill="#10b981" radius={[6, 6, 0, 0]} />
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </section>
-
-                                <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-                                    <div className="mb-5 flex items-center justify-between">
-                                        <div>
-                                            <h3 className="font-bold text-slate-900">Conversion Funnel<InfoTip text={HELP.funnel} /></h3>
-                                            <p className="mt-1 text-xs text-slate-400">{funnel ? `${funnel.period_label} · ${funnel.compare_label}` : "Loading…"}</p>
-                                        </div>
-                                        <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
-                                            {([
-                                                { key: "today", label: "Today" },
-                                                { key: "yesterday", label: "Yesterday" },
-                                                { key: "last7", label: "7 days" },
-                                            ] as const).map((opt) => (
-                                                <button
-                                                    key={opt.key}
-                                                    onClick={() => setFunnelPeriod(opt.key)}
-                                                    className={`rounded-md px-2 py-1 font-medium ${funnelPeriod === opt.key ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                                                >
-                                                    {opt.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="mb-4 flex w-fit rounded-lg border border-slate-200 p-0.5 text-xs">
-                                        {(["All", "Mobile", "Desktop"] as const).map((d) => (
-                                            <button
-                                                key={d}
-                                                onClick={() => setFunnelDevice(d)}
-                                                className={`rounded-md px-2.5 py-1 font-medium ${funnelDevice === d ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                                            >
-                                                {d}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    {funnelDevice === "All" ? (
-                                        <FunnelBars data={funnel} loading={funnelLoading} compact />
-                                    ) : (
-                                        <DeviceFunnelBars data={deviceFunnel} device={funnelDevice} error={deviceFunnelErr} />
-                                    )}
-                                </section>
-                            </div>
-
                             <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
                                 <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                                     <div>
@@ -1393,6 +1408,32 @@ function Dashboard() {
                                 )}
                             </section>
 
+                            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+                                <BuyHeatmapCard />
+                                <TrafficSourcesCard />
+                            </div>
+                            <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                <div className="mb-5 flex items-center justify-between">
+                                    <div>
+                                        <h3 className="font-bold text-slate-900">Orders - Last 7 Days<InfoTip text={HELP.ordersTrend} /></h3>
+                                        <p className="mt-1 text-xs text-slate-400">Daily order count (store timezone)</p>
+                                    </div>
+                                    <Activity className="text-emerald-500" size={20} />
+                                </div>
+                                <div className="h-48 w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={ordersTrend.map((d) => ({ day: formatDay(d.date, false), orders: d.orders }))}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
+                                            <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                            <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} allowDecimals={false} />
+                                            <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
+                                            <Bar dataKey="orders" fill="#10b981" radius={[6, 6, 0, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </section>
+                                </>
+                            )}
 
                             <footer className="flex flex-col justify-between gap-2 border-t border-slate-200 py-5 text-xs text-slate-400 sm:flex-row">
                                 <p>© 2026 CRO Automation. All rights reserved.</p>
