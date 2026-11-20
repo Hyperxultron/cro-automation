@@ -604,6 +604,31 @@ export type WhereChanged = {
   errors: Record<string, string>;
 };
 
+export type GeoRow = {
+  label: string;
+  sessions: number;
+  previous_sessions: number | null;
+  sessions_change_pct: number | null;
+  added_to_cart_rate: number | null;
+  conversion_rate: number | null;
+  previous_conversion_rate: number | null;
+  conversion_change_pts: number | null;
+  purchases: number;
+  share_of_sessions: number | null;
+  enough_data: boolean;
+};
+
+export type GeoSplit = {
+  period: "yesterday" | "days";
+  days: number;
+  window_label: string;
+  compare_label: string;
+  min_segment_sessions: number;
+  countries: GeoRow[] | null;
+  states: GeoRow[] | null;
+  errors: Record<string, string>;
+};
+
 export type SegmentSplit = {
   dimension: "device" | "channel";
   days: number;
@@ -771,6 +796,8 @@ export const api = {
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
   recommendations: (range: RecRange = 30) =>
     request<Recommendations>(`/dashboard/recommendations?${range === "yesterday" ? "period=yesterday" : `days=${range}`}`),
+  geo: (range: "yesterday" | 7 | 28) =>
+    request<GeoSplit>(range === "yesterday" ? "/dashboard/geo?period=yesterday" : `/dashboard/geo?period=days&days=${range}`),
   whereChanged: (range: "yesterday" | 7 | 28) =>
     request<WhereChanged>(range === "yesterday" ? "/dashboard/where-changed?period=yesterday" : `/dashboard/where-changed?period=days&days=${range}`),
   overviewTrends: (days: 7 | 14 | 30) => request<OverviewTrends>(`/dashboard/overview-trends?days=${days}`),

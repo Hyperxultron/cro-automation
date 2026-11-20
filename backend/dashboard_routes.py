@@ -37,6 +37,7 @@ from shopify_sync import ensure_fresh_orders
 from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
 from where_changed import fetch_where_changed
+from geo import fetch_geo
 from deeper import fetch_deeper
 from overview_trends import fetch_overview_trends
 from experiments import METRICS as EXPERIMENT_METRICS, delete_experiment, list_experiments, save_experiment
@@ -779,6 +780,22 @@ def where_changed(
         return fetch_where_changed(store, period=period, days=days)
     except Exception as exc:
         logger.exception("Where-changed failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+@router.get("/geo")
+def geo(
+    period: str = Query("days", pattern="^(yesterday|days)$"),
+    days: int = Query(28, ge=2, le=28),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Conversion by country and US state (checklist section 3, P2)."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_geo(store, period=period, days=days)
+    except Exception as exc:
+        logger.exception("Geo split failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 

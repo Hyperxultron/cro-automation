@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import GeoSplitCard from "./GeoSplit";
 import { ArrowDown, ArrowUp, Info, TrendingDown, TrendingUp } from "lucide-react";
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, formatMoney, type Benchmarks, type CvrDay, type DashboardSummary, type FunnelCompare, type SegmentRow, type SegmentSplit } from "../../services/api";
@@ -362,6 +363,8 @@ function ConversionAnalytics() {
         <SegmentTable title="Split by Device" data={deviceSplit} loading={segmentsLoading} currency={summary?.store.currency} />
         <SegmentTable title="Split by Channel" data={channelSplit} loading={segmentsLoading} currency={summary?.store.currency} />
       </div>
+
+      <GeoSplitCard />
 
       <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
         <Info size={15} className="mt-0.5 shrink-0" />
