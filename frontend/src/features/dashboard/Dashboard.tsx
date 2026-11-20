@@ -1301,7 +1301,7 @@ function Dashboard() {
                                     <div className="mb-5 flex items-center justify-between">
                                         <div>
                                             <h3 className="font-bold text-slate-900">Conversion Funnel<InfoTip text={HELP.funnel} /></h3>
-                                            <p className="mt-1 text-xs text-slate-400">{funnel?.period_label ?? "Loading…"}</p>
+                                            <p className="mt-1 text-xs text-slate-400">{funnel ? `${funnel.period_label} · ${funnel.compare_label}` : "Loading…"}</p>
                                         </div>
                                         <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
                                             {([

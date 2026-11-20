@@ -598,7 +598,7 @@ def clarity_status(shop: str | None = Query(None), db: Session = Depends(get_db)
 
 @router.get("/funnel-trend")
 def funnel_trend(
-    days: int = Query(7, ge=2, le=30),
+    days: int = Query(7, ge=2, le=60),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):

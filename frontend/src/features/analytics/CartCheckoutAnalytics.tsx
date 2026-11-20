@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Filter } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import CartExtras from "./CartExtras";
+import AbandonmentTrend from "./AbandonmentTrend";
 import { api, type Benchmarks, type Funnel, type FunnelTrendDay } from "../../services/api";
 
 function CartCheckoutAnalytics() {
@@ -12,7 +13,7 @@ function CartCheckoutAnalytics() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.funnel(), api.funnelTrend(7), api.benchmarks()])
+    Promise.all([api.funnel(), api.funnelTrend(8), api.benchmarks()])
       .then(([f, t, b]) => {
         setFunnel(f);
         setTrend(t.trend);
@@ -38,6 +39,26 @@ function CartCheckoutAnalytics() {
     ? Math.round(((funnel.reached_checkout - funnel.completed_checkout) / funnel.reached_checkout) * 1000) / 10
     : null;
 
+  // Same weekday last week, for the change chip on the two tiles.
+  const lastWeekRow = (() => {
+    if (!funnel?.date) return null;
+    const d = new Date(`${funnel.date}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 7);
+    const iso = d.toISOString().slice(0, 10);
+    return trend.find((r) => r.date === iso) ?? null;
+  })();
+  const dayLabel = (iso?: string | null) =>
+    iso ? new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "Yesterday";
+  const chip = (cur: number | null, prev: number | null | undefined) => {
+    if (cur == null || prev == null) return null;
+    const d = Math.round((cur - prev) * 10) / 10;
+    return (
+      <span className={`ml-2 rounded-md px-1.5 py-0.5 text-xs font-semibold ${d === 0 ? "bg-slate-100 text-slate-500" : d < 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+        {d > 0 ? "▲ +" : d < 0 ? "▼ " : ""}{d} pts
+      </span>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -55,8 +76,10 @@ function CartCheckoutAnalytics() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">Cart Abandonment Rate</p>
-          <h2 className="mt-2 text-2xl font-bold text-slate-900">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{dayLabel(funnel?.date)} · vs {dayLabel(lastWeekRow?.date)}</p>
+          <h2 className="mt-2 flex items-center text-2xl font-bold text-slate-900">
             {loading ? "…" : cartAbandon != null ? `${cartAbandon}%` : "—"}
+            {!loading && chip(cartAbandon, lastWeekRow?.cart_abandonment_rate)}
           </h2>
           <p className="cro-note mt-1 text-xs text-slate-400">of sessions that added to cart but never purchased</p>
           {benchmarks && cartAbandon != null && (
@@ -74,8 +97,10 @@ function CartCheckoutAnalytics() {
         </div>
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">Checkout Abandonment Rate</p>
-          <h2 className="mt-2 text-2xl font-bold text-slate-900">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{dayLabel(funnel?.date)} · vs {dayLabel(lastWeekRow?.date)}</p>
+          <h2 className="mt-2 flex items-center text-2xl font-bold text-slate-900">
             {loading ? "…" : checkoutAbandon != null ? `${checkoutAbandon}%` : "—"}
+            {!loading && chip(checkoutAbandon, lastWeekRow?.checkout_abandonment_rate)}
           </h2>
           <p className="cro-note mt-1 text-xs text-slate-400">of sessions that reached checkout but never purchased</p>
           {benchmarks && checkoutAbandon != null && (
@@ -127,6 +152,8 @@ function CartCheckoutAnalytics() {
         )}
       </section>
 
+      <AbandonmentTrend />
+
       <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
         <h3 className="mb-5 font-bold text-slate-900">Funnel Trend - Last 7 Days</h3>
         {trend.length === 0 ? (
@@ -134,7 +161,7 @@ function CartCheckoutAnalytics() {
         ) : (
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={trend.map((d) => ({ day: (d.date ?? "").slice(5), Sessions: d.sessions, "Added to Cart": d.added_to_cart, Checkout: d.reached_checkout, Purchased: d.completed_checkout }))}>
+              <BarChart data={trend.slice(-7).map((d) => ({ day: (d.date ?? "").slice(5), Sessions: d.sessions, "Added to Cart": d.added_to_cart, Checkout: d.reached_checkout, Purchased: d.completed_checkout }))}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
                 <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
