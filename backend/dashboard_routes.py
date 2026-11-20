@@ -668,6 +668,38 @@ def sales_trend(
     return fetch_sales_trend(db, store, days=days, include_today=include_today)
 
 
+@router.get("/funnel-devices")
+def funnel_devices(
+    period: str = Query("yesterday", pattern="^(today|yesterday|last7)$"),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from overview_extras import fetch_device_funnel
+
+    store = _get_store(db, shop)
+    try:
+        return fetch_device_funnel(store, period=period)
+    except Exception as exc:
+        logger.exception("Device funnel failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+@router.get("/buy-heatmap")
+def buy_heatmap(
+    days: int = Query(28, ge=7, le=56),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from overview_extras import fetch_buy_heatmap
+
+    store = _get_store(db, shop)
+    try:
+        return fetch_buy_heatmap(store, days=days)
+    except Exception as exc:
+        logger.exception("Buy heatmap failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
 @router.get("/sales-breakdown")
 def sales_breakdown(
     period: str = Query("yesterday", pattern="^(yesterday|today|last7)$"),

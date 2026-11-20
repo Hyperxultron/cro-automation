@@ -393,6 +393,23 @@ export type SegmentSplit = {
   revenue_note: string;
 };
 
+export type DeviceFunnelSteps = { sessions: number; added_to_cart: number; reached_checkout: number; completed_checkout: number };
+
+export type DeviceFunnel = {
+  period: "today" | "yesterday" | "last7";
+  window_label: string;
+  devices: Record<string, DeviceFunnelSteps>;
+};
+
+export type BuyHeatmap = {
+  days: number;
+  window_label: string;
+  weekdays: string[];
+  cells: { weekday: number; hour: number; sessions: number; orders: number; cvr: number | null }[];
+  hours_with_data: number;
+  average_cvr: number | null;
+};
+
 export type ChangeLogArea = "theme" | "app" | "price" | "promo" | "ad" | "other";
 
 export type ChangeLogEntry = {
@@ -522,6 +539,9 @@ export const api = {
     request<SalesTrend>(`/dashboard/sales-trend?days=${days}${includeToday ? "&include_today=true" : ""}`),
   salesBreakdown: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
     request<SalesBreakdown>(`/dashboard/sales-breakdown?period=${period}&compare=${compare}`),
+  funnelDevices: (period: "today" | "yesterday" | "last7") =>
+    request<DeviceFunnel>(`/dashboard/funnel-devices?period=${period}`),
+  buyHeatmap: (days = 28) => request<BuyHeatmap>(`/dashboard/buy-heatmap?days=${days}`),
   segments: (dimension: "device" | "channel", days = 7) =>
     request<SegmentSplit>(`/dashboard/segments?dimension=${dimension}&days=${days}`),
   changeLog: (days = 90) => request<ChangeLogResponse>(`/dashboard/change-log?days=${days}`),

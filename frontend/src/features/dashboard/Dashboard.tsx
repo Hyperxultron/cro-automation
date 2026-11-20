@@ -2,13 +2,14 @@
 import { useCallback, useEffect, useState } from "react";
 import {
     api, formatMoney, timeAgo,
-    type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type FunnelCompare, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct
+    type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type FunnelCompare, type OrderHealth, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct, type DeviceFunnel
 } from "../../services/api";
 import ChangeLog from "../changelog/ChangeLog";
 import AlarmRules from "../alarms/AlarmRules";
 import AlertHistory from "../alarms/AlertHistory";
 import SettingsPage from "../settings/Settings";
 import StoreIntegration from "../store/StoreIntegration";
+import { BuyHeatmapCard, SalesOverTimeChart, TrafficSourcesCard } from "./OceanCharts";
 import CroRecommendations from "../recommendations/CroRecommendations";
 import ConversionAnalytics from "../analytics/ConversionAnalytics";
 import ProductAnalytics from "../analytics/ProductAnalytics";
@@ -88,6 +89,42 @@ const ruleKind = (rule: AlarmRuleItem): "quilt" | "cvr" | "other" => {
     return "other";
 };
 
+// Funnel for one device (Mobile / Desktop), same look as FunnelBars, no comparison.
+function DeviceFunnelBars({ data, device, error }: { data: DeviceFunnel | null; device: string; error: boolean }) {
+    if (error) return <p className="text-xs text-slate-400">Device split isn't available from Shopify right now.</p>;
+    if (!data) return <p className="text-xs text-slate-400">Loading…</p>;
+    const d = data.devices[device];
+    if (!d || !d.sessions) return <p className="text-xs text-slate-400">No {device.toLowerCase()} visits in this period.</p>;
+    const all = Object.values(data.devices).reduce((n, x) => n + x.sessions, 0);
+    const steps = [
+        { label: "Sessions", value: d.sessions, prev: null as number | null },
+        { label: "Added to cart", value: d.added_to_cart, prev: d.sessions },
+        { label: "Reached checkout", value: d.reached_checkout, prev: d.added_to_cart },
+        { label: "Completed purchase", value: d.completed_checkout, prev: d.reached_checkout },
+    ];
+    return (
+        <div className="space-y-3">
+            {steps.map((st) => (
+                <div key={st.label}>
+                    <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 text-xs">
+                        <span className="font-medium text-slate-700">{st.label}</span>
+                        <span className="text-slate-500">
+                            <span className="font-semibold text-slate-900">{st.value.toLocaleString()}</span>
+                            {st.prev != null && st.prev > 0 && <> · {Math.round((st.value / st.prev) * 1000) / 10}% of previous step</>}
+                        </span>
+                    </div>
+                    <div className="h-2.5 w-full rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max((st.value / d.sessions) * 100, 1.5)}%` }} />
+                    </div>
+                </div>
+            ))}
+            <p className="pt-1 text-[11px] text-slate-400">
+                {device}: {Math.round((d.sessions / (all || 1)) * 100)}% of all visits · conversion {Math.round((d.completed_checkout / d.sessions) * 10000) / 100}% · {data.window_label}
+            </p>
+        </div>
+    );
+}
+
 // Logo A from the approved Ocean Pro preview (funnel + rising arrow).
 function BrandMark() {
     return (
@@ -141,6 +178,7 @@ function Dashboard() {
     // Shopify's own Analytics-page sales widgets onto our dashboard).
     const [salesTrend, setSalesTrend] = useState<SalesTrend | null>(null);
     const [salesDays, setSalesDays] = useState<7 | 14 | 28>(14);
+    const [salesMode, setSalesMode] = useState<"area" | "bars">("area");
     const [salesBreakdown, setSalesBreakdown] = useState<SalesBreakdown | null>(null);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
@@ -185,6 +223,20 @@ function Dashboard() {
     // follows the Overview period picker when that changes.
     const [funnelPeriod, setFunnelPeriod] = useState<"today" | "yesterday" | "last7">("yesterday");
     const [funnelLoading, setFunnelLoading] = useState(true);
+    // All / Mobile / Desktop switch on the funnel card (Ocean Pro).
+    const [funnelDevice, setFunnelDevice] = useState<"All" | "Mobile" | "Desktop">("All");
+    const [deviceFunnel, setDeviceFunnel] = useState<DeviceFunnel | null>(null);
+    const [deviceFunnelErr, setDeviceFunnelErr] = useState(false);
+    useEffect(() => {
+        if (funnelDevice === "All") return;
+        let alive = true;
+        setDeviceFunnel(null);
+        setDeviceFunnelErr(false);
+        api.funnelDevices(funnelPeriod)
+            .then((d) => alive && setDeviceFunnel(d))
+            .catch(() => alive && setDeviceFunnelErr(true));
+        return () => { alive = false; };
+    }, [funnelDevice, funnelPeriod]);
     useEffect(() => setFunnelPeriod(overviewPeriod), [overviewPeriod]);
     useEffect(() => {
         let alive = true;
@@ -901,9 +953,21 @@ function Dashboard() {
                                         <div>
                                             <h3 className="font-bold text-slate-900">Total Sales Over Time<InfoTip text={HELP.salesOverTime} /></h3>
                                             <p className="mt-1 text-xs text-slate-500">
-                                                Daily sales: <b className="text-emerald-600">{salesCurRange || "…"}</b> vs{" "}
+                                                Daily sales: <b className="text-blue-600">{salesCurRange || "…"}</b> vs{" "}
                                                 <b className="text-slate-500">{salesPrevRange || "…"}</b> (grey dashed line)
                                             </p>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                        <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
+                                            {(["area", "bars"] as const).map((m) => (
+                                                <button
+                                                    key={m}
+                                                    onClick={() => setSalesMode(m)}
+                                                    className={`rounded-md px-2 py-1 font-medium ${salesMode === m ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                                >
+                                                    {m === "area" ? "Area" : "Bars"}
+                                                </button>
+                                            ))}
                                         </div>
                                         <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
                                             {([7, 14, 28] as const).map((d) => (
@@ -915,6 +979,7 @@ function Dashboard() {
                                                     {d} days
                                                 </button>
                                             ))}
+                                        </div>
                                         </div>
                                     </div>
                                     <div className="mb-4 flex items-end gap-3">
@@ -940,38 +1005,10 @@ function Dashboard() {
                                     {historyStartLabel && (!salesCurrentComplete || !salesPrevComplete) && (
                                         <p className="mb-2 text-xs text-amber-600">Order history in this app starts {historyStartLabel}; earlier days are blank, not $0.</p>
                                     )}
-                                    <div className="h-64 w-full">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={salesChartData}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
-                                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                                                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                                                <Tooltip
-                                                    content={({ active, payload }) => {
-                                                        if (!active || !payload?.length) return null;
-                                                        const row = payload[0].payload as (typeof salesChartData)[number];
-                                                        const f = (iso: string | null) =>
-                                                            iso ? new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "—";
-                                                        const money = (v: number | null) => (v === null ? "no data" : formatMoney(v, currency));
-                                                        return (
-                                                            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
-                                                                <p className="font-semibold text-emerald-600">{f(row.curDate)}: {money(row.current)}</p>
-                                                                <p className="mt-0.5 text-slate-500">{f(row.prevDate)}: {money(row.previous)}</p>
-                                                            </div>
-                                                        );
-                                                    }}
-                                                />
-                                                <Line type="linear" dataKey="previous" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} />
-                                                <Line type="linear" dataKey="current" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
-                                                {salesMarkers.map((m) => (
-                                                    <ReferenceLine key={m.id} x={m.label} stroke="#f59e0b" strokeDasharray="4 3"
-                                                        label={{ value: "●", position: "top", fill: "#f59e0b", fontSize: 10 }} />
-                                                ))}
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
+                                    <SalesOverTimeChart rows={salesChartData} markers={salesMarkers} currency={currency} mode={salesMode} />
+                                    <p className="text-[11px] text-slate-400">Drag the slider (or scroll inside the chart) to zoom into a few days.</p>
                                     <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-                                        <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 bg-emerald-500" /> {salesCurRange}</span>
+                                        <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 bg-blue-600" /> {salesCurRange}</span>
                                         <span className="flex items-center gap-1.5"><span className="inline-block w-5 border-t-2 border-dashed border-slate-400" /> {salesPrevRange} (same weekday, one period earlier)</span>
                                         {salesMarkers.length > 0 && <span className="flex items-center gap-1.5"><span className="text-amber-500">●</span> a change from the Change Log</span>}
                                     </div>
@@ -1105,6 +1142,11 @@ function Dashboard() {
                                     <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm bg-blue-300" /> today so far</span>
                                 </div>
                             </section>
+
+                            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+                                <BuyHeatmapCard />
+                                <TrafficSourcesCard />
+                            </div>
 
                             <div className="grid gap-6 xl:grid-cols-3">
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm xl:col-span-2 sm:p-6">
@@ -1280,14 +1322,29 @@ function Dashboard() {
                                                 <button
                                                     key={opt.key}
                                                     onClick={() => setFunnelPeriod(opt.key)}
-                                                    className={`rounded-md px-2 py-1 font-medium ${funnelPeriod === opt.key ? "bg-violet-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                                    className={`rounded-md px-2 py-1 font-medium ${funnelPeriod === opt.key ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
                                                 >
                                                     {opt.label}
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
-                                    <FunnelBars data={funnel} loading={funnelLoading} compact />
+                                    <div className="mb-4 flex w-fit rounded-lg border border-slate-200 p-0.5 text-xs">
+                                        {(["All", "Mobile", "Desktop"] as const).map((d) => (
+                                            <button
+                                                key={d}
+                                                onClick={() => setFunnelDevice(d)}
+                                                className={`rounded-md px-2.5 py-1 font-medium ${funnelDevice === d ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                            >
+                                                {d}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {funnelDevice === "All" ? (
+                                        <FunnelBars data={funnel} loading={funnelLoading} compact />
+                                    ) : (
+                                        <DeviceFunnelBars data={deviceFunnel} device={funnelDevice} error={deviceFunnelErr} />
+                                    )}
                                 </section>
                             </div>
 

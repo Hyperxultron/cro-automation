@@ -31,7 +31,7 @@ function FunnelBars({ data, loading, compact = false }: { data: FunnelCompare | 
                             </span>
                         </div>
                         <div className="h-2.5 w-full rounded-full bg-slate-100">
-                            <div className="h-full rounded-full bg-violet-500" style={{ width: `${width}%` }} />
+                            <div className="h-full rounded-full bg-blue-600" style={{ width: `${width}%` }} />
                         </div>
                         {!compact && step.previous_value != null && (
                             <div className="mt-1 flex items-center gap-2">
