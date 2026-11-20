@@ -738,19 +738,6 @@ function Dashboard() {
                                 </button>
                             </div>
 
-                            {/* "How to read this page" - so a new team member can follow the
-                                dashboard without help (manager's 15-minute goal). */}
-                            <details className="group rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-600">
-                                <summary className="cursor-pointer select-none font-semibold text-blue-800">How to read this page (1 minute)</summary>
-                                <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed">
-                                    <li><b>Pick a period</b> at the top. "Yesterday" is a full day and is the default; "Today so far" is still filling up.</li>
-                                    <li><b>Check the health strip</b>: if the last order was many hours ago during US daytime, something may be broken.</li>
-                                    <li><b>Read the cards left to right</b>: Revenue → Conversion rate → Orders. Each card says its period and what it's compared with (the same weekday in earlier weeks).</li>
-                                    <li><b>Colours mean good or bad, not up or down.</b> Green = good for the store, red = needs attention. Grey "Too early to compare" = not enough data yet to trust a % change.</li>
-                                    <li><b>Find where it changed</b> in the Conversion Funnel: the step with the red number is where shoppers dropped off more than usual. Then open Conversion Analytics for the device and channel split.</li>
-                                    <li>Tap any <span className="inline-flex align-middle text-slate-400">ⓘ</span> to see exactly what a number means. Numbers come from Shopify and match Shopify Analytics' definitions.</li>
-                                </ol>
-                            </details>
 
                             {/* Period controls + comparison picker (checklist section 2, P1).
                                 Yesterday (a complete day) is the default; Today is an explicit toggle. */}
