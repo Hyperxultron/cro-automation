@@ -247,21 +247,56 @@ def _rate(num, den):
     return round(num / den * 100, 2) if num is not None and den else None
 
 
-def _hour_parts(row: dict) -> tuple[str, int] | None:
-    raw = str(row.get("hour") or "")
-    if len(raw) < 13:
+def _local_hour(raw, tz: ZoneInfo) -> datetime | None:
+    """
+    An hourly ShopifyQL timestamp as a store-local datetime.
+
+    Shopify returns hour buckets as UTC timestamps, so "2026-11-20T02:00Z" is
+    really 19 Nov 21:00 in New York. Reading the first 10 characters as the
+    date (what the first version did) put the last ~5 hours of yesterday into
+    "today": 493 sessions at 00:28 instead of 27.
+    """
+    text_ = str(raw or "").strip()
+    if len(text_) < 13:
         return None
     try:
-        return raw[:10], int(raw[11:13])
+        dt = datetime.fromisoformat(text_.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    return dt.astimezone(tz)
+
+
+_FUNNEL_SHOW = (
+    "sessions, sessions_with_cart_additions, sessions_that_reached_checkout, sessions_that_completed_checkout"
+)
+
+
+def _add_row(target: dict, row: dict) -> None:
+    target["sessions"] += _to_int(row.get("sessions"))
+    target["added_to_cart"] += _to_int(row.get("sessions_with_cart_additions"))
+    target["reached_checkout"] += _to_int(row.get("sessions_that_reached_checkout"))
+    target["completed_checkout"] += _to_int(row.get("sessions_that_completed_checkout"))
+
+
+def _q(store: models.Store, q: str) -> list[dict]:
+    data = graphql(store.store_url, FUNNEL_QUERY, {"q": q})["shopifyqlQuery"]
+    if data.get("parseErrors"):
+        raise ValueError(f"ShopifyQL error: {data['parseErrors']}")
+    return (data.get("tableData") or {}).get("rows") or []
 
 
 def _today_funnel(store: models.Store):
     """
-    Today so far (store time) and the same weekday last week up to the same
-    hour, so the comparison is fair. Hourly rows from the same `sessions`
-    schema Shopify uses for its own funnel (live, about a few minutes behind).
+    Today so far, in the store's time zone - same numbers as Shopify's
+    "Conversion rate breakdown" for Today.
+
+    Today's totals come from a plain day query (SINCE today UNTIL today), which
+    Shopify already cuts at store midnight. The comparison (same weekday last
+    week, up to the same hour) needs hourly rows; those are converted from UTC
+    to store time, and if they don't add up to today's day total the
+    comparison is dropped rather than shown wrong.
     Returns (current, previous_or_None, product_views_available, now_local).
     """
     tz = ZoneInfo(store.timezone or "UTC")
@@ -273,84 +308,47 @@ def _today_funnel(store: models.Store):
     if cached and cached[0] > time.time():
         return cached[1]
 
-    window = f"SINCE {lw.isoformat()} UNTIL {today.isoformat()}"
     empty = lambda: {k: 0 for k, _ in FUNNEL_STEPS}  # noqa: E731
-    cur, prev = empty(), empty()
-    hourly_ok = False
-    try:
-        q = (
-            "FROM sessions SHOW sessions, sessions_with_cart_additions, "
-            "sessions_that_reached_checkout, sessions_that_completed_checkout "
-            f"{HUMAN_SESSIONS_FILTER}TIMESERIES hour {window} ORDER BY hour ASC"
-        )
-        data = graphql(store.store_url, FUNNEL_QUERY, {"q": q})["shopifyqlQuery"]
-        if data.get("parseErrors"):
-            raise ValueError(str(data["parseErrors"]))
-        for row in (data.get("tableData") or {}).get("rows") or []:
-            parts = _hour_parts(row)
-            if not parts:
-                continue
-            day, hr = parts
-            if day == today.isoformat():
-                target = cur
-            elif day == lw.isoformat() and hr <= now.hour:
-                target = prev
-            else:
-                continue
-            hourly_ok = True
-            target["sessions"] += _to_int(row.get("sessions"))
-            target["added_to_cart"] += _to_int(row.get("sessions_with_cart_additions"))
-            target["reached_checkout"] += _to_int(row.get("sessions_that_reached_checkout"))
-            target["completed_checkout"] += _to_int(row.get("sessions_that_completed_checkout"))
-    except Exception:
-        hourly_ok = False
+    day_w = f"SINCE {today.isoformat()} UNTIL {today.isoformat()}"
 
-    if not hourly_ok:
-        # Fallback: today's totals only, no comparison.
-        q = (
-            "FROM sessions SHOW sessions, sessions_with_cart_additions, "
-            "sessions_that_reached_checkout, sessions_that_completed_checkout "
-            f"{HUMAN_SESSIONS_FILTER}SINCE {today.isoformat()} UNTIL {today.isoformat()}"
-        )
-        data = graphql(store.store_url, FUNNEL_QUERY, {"q": q})["shopifyqlQuery"]
-        if data.get("parseErrors"):
-            raise ValueError(f"ShopifyQL error: {data['parseErrors']}")
-        row = ((data.get("tableData") or {}).get("rows") or [{}])[0]
-        cur = empty()
-        cur["sessions"] = _to_int(row.get("sessions"))
-        cur["added_to_cart"] = _to_int(row.get("sessions_with_cart_additions"))
-        cur["reached_checkout"] = _to_int(row.get("sessions_that_reached_checkout"))
-        cur["completed_checkout"] = _to_int(row.get("sessions_that_completed_checkout"))
-        prev = None
+    # 1. Today's totals (authoritative).
+    cur = empty()
+    for row in _q(store, f"FROM sessions SHOW {_FUNNEL_SHOW} {HUMAN_SESSIONS_FILTER}{day_w}"):
+        _add_row(cur, row)
 
     pv_available = False
     try:
-        pv_q = (
-            f"FROM sessions SHOW sessions {HUMAN_SESSIONS_FILTER}GROUP BY session_viewed_product "
-            + (f"TIMESERIES hour {window} ORDER BY hour ASC" if hourly_ok
-               else f"SINCE {today.isoformat()} UNTIL {today.isoformat()}")
-        )
-        pv = graphql(store.store_url, FUNNEL_QUERY, {"q": pv_q})["shopifyqlQuery"]
-        if not pv.get("parseErrors"):
-            for row in (pv.get("tableData") or {}).get("rows") or []:
-                if not _is_true(row.get("session_viewed_product")):
-                    continue
-                if hourly_ok:
-                    parts = _hour_parts(row)
-                    if not parts:
-                        continue
-                    day, hr = parts
-                    if day == today.isoformat():
-                        cur["product_views"] += _to_int(row.get("sessions"))
-                    elif day == lw.isoformat() and hr <= now.hour and prev is not None:
-                        prev["product_views"] += _to_int(row.get("sessions"))
-                    else:
-                        continue
-                else:
-                    cur["product_views"] += _to_int(row.get("sessions"))
-                pv_available = True
+        for row in _q(store, f"FROM sessions SHOW sessions {HUMAN_SESSIONS_FILTER}GROUP BY session_viewed_product {day_w}"):
+            if _is_true(row.get("session_viewed_product")):
+                cur["product_views"] += _to_int(row.get("sessions"))
+            pv_available = True
     except Exception:
         pv_available = False
+
+    # 2. Same weekday last week up to the same hour (hourly, UTC -> store time).
+    prev = empty()
+    check = 0  # today's sessions rebuilt from hourly rows, to verify the conversion
+    try:
+        window = f"SINCE {(lw - timedelta(days=1)).isoformat()} UNTIL {today.isoformat()}"
+        for row in _q(store, f"FROM sessions SHOW {_FUNNEL_SHOW} {HUMAN_SESSIONS_FILTER}TIMESERIES hour {window}"):
+            t = _local_hour(row.get("hour"), tz)
+            if t is None:
+                continue
+            if t.date() == today:
+                check += _to_int(row.get("sessions"))
+            elif t.date() == lw and t.hour <= now.hour:
+                _add_row(prev, row)
+        if pv_available:
+            for row in _q(store, f"FROM sessions SHOW sessions {HUMAN_SESSIONS_FILTER}GROUP BY session_viewed_product TIMESERIES hour {window}"):
+                t = _local_hour(row.get("hour"), tz)
+                if t and t.date() == lw and t.hour <= now.hour and _is_true(row.get("session_viewed_product")):
+                    prev["product_views"] += _to_int(row.get("sessions"))
+        # Hourly rows must rebuild today's total (allow a few sessions of lag).
+        if abs(check - cur["sessions"]) > max(5, cur["sessions"] * 0.05) or not prev["sessions"]:
+            prev = None
+    except Exception:
+        prev = None
+
     if not pv_available:
         cur["product_views"] = None
         if prev is not None:
