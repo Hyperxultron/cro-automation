@@ -84,11 +84,13 @@ def _sales_stats(db: Session, store: models.Store, start, end) -> dict:
     }
 
 
-def fetch_sales_trend(db: Session, store: models.Store, days: int = 14) -> dict:
+def fetch_sales_trend(db: Session, store: models.Store, days: int = 14, include_today: bool = False) -> dict:
     """
     Day-by-day total sales for the last `days` complete days, plus the same
     number of days right before that window - for the "vs previous period"
     dashed comparison line on the chart.
+    include_today=True: the window ends with today so far instead (for the
+    plain "Daily total sales" chart, which has no comparison line).
     """
     tz = _tz(store)
     today = datetime.now(tz).date()
@@ -104,15 +106,18 @@ def fetch_sales_trend(db: Session, store: models.Store, days: int = 14) -> dict:
         stats = _sales_stats(db, store, *_day_bounds_utc(day, tz))
         return {"date": day.isoformat(), "revenue": stats["total"], "orders": stats["orders"]}
 
+    end = today if include_today else yesterday
     current = []
     previous = []
     for i in range(days - 1, -1, -1):
-        day = yesterday - timedelta(days=i)
+        day = end - timedelta(days=i)
         current.append(point(day))
         previous.append(point(day - timedelta(days=days)))
 
     return {
         "days": days,
+        "include_today": include_today,
+        "today": today.isoformat(),
         "history_start": history_start.isoformat() if history_start else None,
         "current": current,
         "previous": previous,

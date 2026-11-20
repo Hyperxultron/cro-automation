@@ -11,6 +11,8 @@ export const HELP = {
     aov: "Average order value = (gross sales − discounts) ÷ orders, before shipping and tax. Same definition as Shopify.",
     salesOverTime:
         "Total sales per day (complete days only, so today isn't included). Green line = the dates shown in green; grey dashed line = the same number of days just before. Hover a day to see both dates and their sales. Orange dots = changes logged in the Change Log.",
+    dailySales:
+        "Total sales for each day, no comparison. The last bar is today so far (lighter colour) and grows during the day. Same numbers as Shopify's Total sales (store time zone). Hover a bar to see the date, sales and orders.",
     salesBreakdown:
         "How we get from gross sales to total sales, same rows as Shopify Analytics. Green = good for the store, red = bad (so more discounts or refunds show in red).",
     cvrTrend:

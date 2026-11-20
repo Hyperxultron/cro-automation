@@ -288,10 +288,6 @@ export type LandingPagesData = {
   days: number;
   window_label: string;
   compare_label: string;
-  speed_window_label?: string;
-  speed_note?: string | null;
-  search_window_label?: string;
-  search_note?: string | null;
   bounce_definition: string;
   min_sessions: number;
   bounce_flag_pts: number;
@@ -321,6 +317,10 @@ export type SiteHealthData = {
   days: number;
   window_label: string;
   compare_label: string;
+  speed_window_label?: string;
+  speed_note?: string | null;
+  search_window_label?: string;
+  search_note?: string | null;
   limits: Record<"lcp" | "inp" | "cls", { good: number; poor: number; unit: string }>;
   cwv_available: boolean;
   devices: Record<string, VitalsRow>;
@@ -415,6 +415,8 @@ export type SalesTrendDay = { date: string; revenue: number | null; orders: numb
 
 export type SalesTrend = {
   days: number;
+  include_today?: boolean;
+  today?: string;
   history_start: string | null;
   current: SalesTrendDay[];
   previous: SalesTrendDay[];
@@ -516,7 +518,8 @@ export const api = {
   orderHealth: (days = 30) => request<OrderHealth>(`/dashboard/order-health?days=${days}`),
   overview: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
     request<Overview>(`/dashboard/overview?period=${period}&compare=${compare}`),
-  salesTrend: (days = 14) => request<SalesTrend>(`/dashboard/sales-trend?days=${days}`),
+  salesTrend: (days = 14, includeToday = false) =>
+    request<SalesTrend>(`/dashboard/sales-trend?days=${days}${includeToday ? "&include_today=true" : ""}`),
   salesBreakdown: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
     request<SalesBreakdown>(`/dashboard/sales-breakdown?period=${period}&compare=${compare}`),
   segments: (dimension: "device" | "channel", days = 7) =>

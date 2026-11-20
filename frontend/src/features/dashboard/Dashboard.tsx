@@ -26,7 +26,7 @@ import {
     ShoppingBag, ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
 import {
-    Bar, BarChart, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer,
+    Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer,
     Tooltip, XAxis, YAxis
 } from "recharts";
 
@@ -176,6 +176,29 @@ function Dashboard() {
         };
     }, [funnelPeriod]);
 
+    // "Daily Total Sales" card: plain daily totals, no comparison line, last
+    // bar = today so far. Own day switch and 5-minute refresh.
+    const [dailyDays, setDailyDays] = useState<7 | 14 | 28>(14);
+    const [dailySales, setDailySales] = useState<SalesTrend | null>(null);
+    const [dailyLoading, setDailyLoading] = useState(true);
+    useEffect(() => {
+        let alive = true;
+        const load = () =>
+            api
+                .salesTrend(dailyDays, true)
+                .then((d) => alive && setDailySales(d))
+                .catch(() => alive && setDailySales(null))
+                .finally(() => alive && setDailyLoading(false));
+        setDailySales(null);
+        setDailyLoading(true);
+        load();
+        const timer = setInterval(load, 5 * 60 * 1000);
+        return () => {
+            alive = false;
+            clearInterval(timer);
+        };
+    }, [dailyDays]);
+
     useEffect(() => {
         loadData();
         const timer = setInterval(loadData, 5 * 60 * 1000); // har 5 min auto-refresh
@@ -288,6 +311,22 @@ function Dashboard() {
     const historyStartLabel = salesTrend?.history_start
         ? new Date(`${salesTrend.history_start}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })
         : null;
+
+    const dailyRows = (dailySales?.current ?? []).map((d) => ({
+        day: formatDay(d.date, true),
+        date: d.date,
+        revenue: d.revenue,
+        orders: d.orders,
+        isToday: d.date === dailySales?.today,
+    }));
+    const dailyKnown = dailyRows.filter((d) => d.revenue !== null);
+    const dailyTotal = dailyKnown.reduce((sum, d) => sum + (d.revenue ?? 0), 0);
+    const dailyOrders = dailyKnown.reduce((sum, d) => sum + (d.orders ?? 0), 0);
+    const dailyComplete = dailyKnown.filter((d) => !d.isToday);
+    const dailyAvg = dailyComplete.length ? dailyComplete.reduce((sum, d) => sum + (d.revenue ?? 0), 0) / dailyComplete.length : null;
+    const dailyBest = dailyComplete.reduce<(typeof dailyRows)[number] | null>((best, d) => (!best || (d.revenue ?? 0) > (best.revenue ?? 0) ? d : best), null);
+    const dailyRange = rangeText(dailySales?.current);
+    const dailyNice = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
     const quiltStatusText: Record<string, string> = {
         normal: "Normal",
@@ -960,6 +999,87 @@ function Dashboard() {
                                     <p className="mt-3 text-xs text-slate-400">{salesBreakdown?.note}</p>
                                 </section>
                             </div>
+
+                            <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                                <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <h3 className="font-bold text-slate-900">Daily Total Sales<InfoTip text={HELP.dailySales} /></h3>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            {dailyRange ? <>{dailyRange} · last bar is today so far</> : "…"}
+                                        </p>
+                                    </div>
+                                    <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
+                                        {([7, 14, 28] as const).map((d) => (
+                                            <button
+                                                key={d}
+                                                onClick={() => setDailyDays(d)}
+                                                className={`rounded-md px-2 py-1 font-medium ${dailyDays === d ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                            >
+                                                {d} days
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                                    <div>
+                                        <p className="text-xs text-slate-500">Total sales</p>
+                                        <p className="text-2xl font-bold text-slate-900">{dailyKnown.length ? formatMoney(dailyTotal, currency) : "—"}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-slate-500">Orders</p>
+                                        <p className="text-2xl font-bold text-slate-900">{dailyKnown.length ? dailyOrders.toLocaleString() : "—"}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-slate-500">Average per day</p>
+                                        <p className="text-2xl font-bold text-slate-900">{dailyAvg !== null ? formatMoney(dailyAvg, currency) : "—"}</p>
+                                        <p className="text-[11px] text-slate-400">complete days only</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-slate-500">Best day</p>
+                                        <p className="text-2xl font-bold text-slate-900">{dailyBest ? formatMoney(dailyBest.revenue ?? 0, currency) : "—"}</p>
+                                        <p className="text-[11px] text-slate-400">{dailyBest ? dailyNice(dailyBest.date) : ""}</p>
+                                    </div>
+                                </div>
+                                {dailyRows.length === 0 && (
+                                    <p className="mb-2 text-xs text-slate-400">{dailyLoading ? "Loading…" : "No sales data available for this period."}</p>
+                                )}
+                                {dailyRows.some((d) => d.revenue === null) && dailySales?.history_start && (
+                                    <p className="mb-2 text-xs text-amber-600">Order history in this app starts {dailyNice(dailySales.history_start)}; earlier days are blank, not $0.</p>
+                                )}
+                                <div className="h-64 w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={dailyRows} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5" />
+                                            <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                            <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                            <Tooltip
+                                                cursor={{ fill: "#f1f5f9" }}
+                                                content={({ active, payload }) => {
+                                                    if (!active || !payload?.length) return null;
+                                                    const row = payload[0].payload as (typeof dailyRows)[number];
+                                                    return (
+                                                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
+                                                            <p className="font-semibold text-slate-900">{dailyNice(row.date)}{row.isToday ? " (today so far)" : ""}</p>
+                                                            <p className="mt-0.5 text-slate-600">
+                                                                {row.revenue === null ? "no data" : `${formatMoney(row.revenue, currency)} · ${row.orders ?? 0} orders`}
+                                                            </p>
+                                                        </div>
+                                                    );
+                                                }}
+                                            />
+                                            <Bar dataKey="revenue" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+                                                {dailyRows.map((d) => (
+                                                    <Cell key={d.date} fill={d.isToday ? "#93c5fd" : "#2563eb"} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                                    <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm bg-blue-600" /> total sales that day</span>
+                                    <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm bg-blue-300" /> today so far</span>
+                                </div>
+                            </section>
 
                             <div className="grid gap-6 xl:grid-cols-3">
                                 <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm xl:col-span-2 sm:p-6">

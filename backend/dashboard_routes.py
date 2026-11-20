@@ -658,11 +658,14 @@ def overview(
 @router.get("/sales-trend")
 def sales_trend(
     days: int = Query(14, ge=2, le=90),
+    include_today: bool = Query(False),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     store = _get_store(db, shop)
-    return fetch_sales_trend(db, store, days=days)
+    if include_today:
+        ensure_fresh_orders(db, store)  # today's bar must be current
+    return fetch_sales_trend(db, store, days=days, include_today=include_today)
 
 
 @router.get("/sales-breakdown")
