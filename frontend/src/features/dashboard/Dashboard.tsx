@@ -21,7 +21,7 @@ import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
-    Bell, CheckCircle2, Clock3, DollarSign, FileText, Filter, Gauge, Globe, History, IndianRupee, LayoutDashboard,
+    Bell, CheckCircle2, Clock3, DollarSign, FileText, Gauge, Globe, History, IndianRupee, LayoutDashboard,
     Lightbulb, Mail, Menu, Package, RefreshCw, Route, Settings, ShieldCheck,
     ShoppingBag, ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
@@ -122,14 +122,12 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t, tp, ot, f, oh, ov, cl, st, sb, ar] = await Promise.all([
+            const [s, t, tp, ot, oh, ov, cl, st, sb, ar] = await Promise.all([
                 api.summary(),
                 // 2x the window: the earlier half is the dashed "previous period" line.
                 api.cvrTrend(periodDays * 2).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
                 api.topProducts(1, 5).catch(() => ({ days: 1, products: [] as TopProduct[] })),
                 api.ordersTrend(7).catch(() => ({ days: 7, trend: [] as OrdersTrendDay[] })),
-                // "Today so far" has no complete funnel yet, so it shows yesterday's.
-                api.funnelCompare(overviewPeriod === "last7" ? "last7" : "yesterday").catch(() => null),
                 api.orderHealth(30).catch(() => null),
                 api.overview(overviewPeriod, overviewCompare).catch(() => null),
                 api.changeLog(Math.max(periodDays, 28)).catch(() => ({ days: 0, valid_areas: [], entries: [] as ChangeLogEntry[] })),
@@ -141,7 +139,6 @@ function Dashboard() {
             setTrend(t.days);
             setTopProducts(tp.products);
             setOrdersTrend(ot.trend);
-            setFunnel(f);
             setOrderHealth(oh);
             setOverview(ov);
             setChangeLogEntries(cl.entries);
@@ -154,6 +151,29 @@ function Dashboard() {
             setLoading(false);
         }
     }, [periodDays, overviewPeriod, overviewCompare]);
+
+    // Conversion Funnel card has its own Today / Yesterday / Last 7 switch; it
+    // follows the Overview period picker when that changes.
+    const [funnelPeriod, setFunnelPeriod] = useState<"today" | "yesterday" | "last7">("yesterday");
+    const [funnelLoading, setFunnelLoading] = useState(true);
+    useEffect(() => setFunnelPeriod(overviewPeriod), [overviewPeriod]);
+    useEffect(() => {
+        let alive = true;
+        const load = () =>
+            api
+                .funnelCompare(funnelPeriod)
+                .then((f) => alive && setFunnel(f))
+                .catch(() => alive && setFunnel(null))
+                .finally(() => alive && setFunnelLoading(false));
+        setFunnel(null);
+        setFunnelLoading(true);
+        load();
+        const timer = setInterval(load, 5 * 60 * 1000);
+        return () => {
+            alive = false;
+            clearInterval(timer);
+        };
+    }, [funnelPeriod]);
 
     useEffect(() => {
         loadData();
@@ -1030,11 +1050,25 @@ function Dashboard() {
                                     <div className="mb-5 flex items-center justify-between">
                                         <div>
                                             <h3 className="font-bold text-slate-900">Conversion Funnel<InfoTip text={HELP.funnel} /></h3>
-                                            <p className="mt-1 text-xs text-slate-400">{funnel?.period_label ?? "Yesterday"}</p>
+                                            <p className="mt-1 text-xs text-slate-400">{funnel?.period_label ?? "Loading…"}</p>
                                         </div>
-                                        <Filter className="text-violet-500" size={20} />
+                                        <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
+                                            {([
+                                                { key: "today", label: "Today" },
+                                                { key: "yesterday", label: "Yesterday" },
+                                                { key: "last7", label: "7 days" },
+                                            ] as const).map((opt) => (
+                                                <button
+                                                    key={opt.key}
+                                                    onClick={() => setFunnelPeriod(opt.key)}
+                                                    className={`rounded-md px-2 py-1 font-medium ${funnelPeriod === opt.key ? "bg-violet-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                                >
+                                                    {opt.label}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <FunnelBars data={funnel} loading={loading} compact />
+                                    <FunnelBars data={funnel} loading={funnelLoading} compact />
                                 </section>
                             </div>
 

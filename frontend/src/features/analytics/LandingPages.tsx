@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, Info, MonitorSmartphone, Route, Search, Share2 } from "lucide-react";
-import { api, formatMoney, type DashboardSummary, type LandingPagesData, type LandingSplitRow } from "../../services/api";
+import { api, type LandingRange, formatMoney, type DashboardSummary, type LandingPagesData, type LandingSplitRow } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
 
@@ -85,8 +85,15 @@ function SplitTable({ title, help, icon, rows, minSessions, showShare = false }:
   );
 }
 
+const RANGES: { key: LandingRange; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: 7, label: "Last 7 days" },
+  { key: 28, label: "Last 28 days" },
+];
+
 function LandingPages() {
-  const [days, setDays] = useState<7 | 28>(28);
+  const [days, setDays] = useState<LandingRange>(28);
   const [data, setData] = useState<LandingPagesData | null>(null);
   const [currency, setCurrency] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,7 +120,7 @@ function LandingPages() {
     };
   }, [days]);
 
-  const pickDays = (d: 7 | 28) => {
+  const pickDays = (d: LandingRange) => {
     if (d === days) return;
     setLoading(true);
     setDays(d);
@@ -144,13 +151,13 @@ function LandingPages() {
           </p>
         </div>
         <div className="flex rounded-xl border bg-white p-1 text-sm">
-          {([7, 28] as const).map((d) => (
+          {RANGES.map((r) => (
             <button
-              key={d}
-              onClick={() => pickDays(d)}
-              className={`rounded-lg px-3 py-1.5 font-medium ${days === d ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+              key={r.key}
+              onClick={() => pickDays(r.key)}
+              className={`rounded-lg px-3 py-1.5 font-medium ${days === r.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
             >
-              Last {d} days
+              {r.label}
             </button>
           ))}
         </div>

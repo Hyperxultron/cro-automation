@@ -247,6 +247,120 @@ def _rate(num, den):
     return round(num / den * 100, 2) if num is not None and den else None
 
 
+def _hour_parts(row: dict) -> tuple[str, int] | None:
+    raw = str(row.get("hour") or "")
+    if len(raw) < 13:
+        return None
+    try:
+        return raw[:10], int(raw[11:13])
+    except ValueError:
+        return None
+
+
+def _today_funnel(store: models.Store):
+    """
+    Today so far (store time) and the same weekday last week up to the same
+    hour, so the comparison is fair. Hourly rows from the same `sessions`
+    schema Shopify uses for its own funnel (live, about a few minutes behind).
+    Returns (current, previous_or_None, product_views_available, now_local).
+    """
+    tz = ZoneInfo(store.timezone or "UTC")
+    now = datetime.now(tz)
+    today = now.date()
+    lw = today - timedelta(days=7)
+    key = f"today:{store.store_url}:{today.isoformat()}"
+    cached = _cache.get(key)
+    if cached and cached[0] > time.time():
+        return cached[1]
+
+    window = f"SINCE {lw.isoformat()} UNTIL {today.isoformat()}"
+    empty = lambda: {k: 0 for k, _ in FUNNEL_STEPS}  # noqa: E731
+    cur, prev = empty(), empty()
+    hourly_ok = False
+    try:
+        q = (
+            "FROM sessions SHOW sessions, sessions_with_cart_additions, "
+            "sessions_that_reached_checkout, sessions_that_completed_checkout "
+            f"{HUMAN_SESSIONS_FILTER}TIMESERIES hour {window} ORDER BY hour ASC"
+        )
+        data = graphql(store.store_url, FUNNEL_QUERY, {"q": q})["shopifyqlQuery"]
+        if data.get("parseErrors"):
+            raise ValueError(str(data["parseErrors"]))
+        for row in (data.get("tableData") or {}).get("rows") or []:
+            parts = _hour_parts(row)
+            if not parts:
+                continue
+            day, hr = parts
+            if day == today.isoformat():
+                target = cur
+            elif day == lw.isoformat() and hr <= now.hour:
+                target = prev
+            else:
+                continue
+            hourly_ok = True
+            target["sessions"] += _to_int(row.get("sessions"))
+            target["added_to_cart"] += _to_int(row.get("sessions_with_cart_additions"))
+            target["reached_checkout"] += _to_int(row.get("sessions_that_reached_checkout"))
+            target["completed_checkout"] += _to_int(row.get("sessions_that_completed_checkout"))
+    except Exception:
+        hourly_ok = False
+
+    if not hourly_ok:
+        # Fallback: today's totals only, no comparison.
+        q = (
+            "FROM sessions SHOW sessions, sessions_with_cart_additions, "
+            "sessions_that_reached_checkout, sessions_that_completed_checkout "
+            f"{HUMAN_SESSIONS_FILTER}SINCE {today.isoformat()} UNTIL {today.isoformat()}"
+        )
+        data = graphql(store.store_url, FUNNEL_QUERY, {"q": q})["shopifyqlQuery"]
+        if data.get("parseErrors"):
+            raise ValueError(f"ShopifyQL error: {data['parseErrors']}")
+        row = ((data.get("tableData") or {}).get("rows") or [{}])[0]
+        cur = empty()
+        cur["sessions"] = _to_int(row.get("sessions"))
+        cur["added_to_cart"] = _to_int(row.get("sessions_with_cart_additions"))
+        cur["reached_checkout"] = _to_int(row.get("sessions_that_reached_checkout"))
+        cur["completed_checkout"] = _to_int(row.get("sessions_that_completed_checkout"))
+        prev = None
+
+    pv_available = False
+    try:
+        pv_q = (
+            f"FROM sessions SHOW sessions {HUMAN_SESSIONS_FILTER}GROUP BY session_viewed_product "
+            + (f"TIMESERIES hour {window} ORDER BY hour ASC" if hourly_ok
+               else f"SINCE {today.isoformat()} UNTIL {today.isoformat()}")
+        )
+        pv = graphql(store.store_url, FUNNEL_QUERY, {"q": pv_q})["shopifyqlQuery"]
+        if not pv.get("parseErrors"):
+            for row in (pv.get("tableData") or {}).get("rows") or []:
+                if not _is_true(row.get("session_viewed_product")):
+                    continue
+                if hourly_ok:
+                    parts = _hour_parts(row)
+                    if not parts:
+                        continue
+                    day, hr = parts
+                    if day == today.isoformat():
+                        cur["product_views"] += _to_int(row.get("sessions"))
+                    elif day == lw.isoformat() and hr <= now.hour and prev is not None:
+                        prev["product_views"] += _to_int(row.get("sessions"))
+                    else:
+                        continue
+                else:
+                    cur["product_views"] += _to_int(row.get("sessions"))
+                pv_available = True
+    except Exception:
+        pv_available = False
+    if not pv_available:
+        cur["product_views"] = None
+        if prev is not None:
+            prev["product_views"] = None
+
+    result = (cur, prev, pv_available, now)
+    _cache[key] = (time.time() + 300, result)  # live view: 5 minute cache
+    return result
+
+
 def fetch_funnel_compare(store: models.Store, period: str = "yesterday") -> dict:
     """
     period "yesterday": yesterday vs the same weekday last week.
@@ -254,11 +368,23 @@ def fetch_funnel_compare(store: models.Store, period: str = "yesterday") -> dict
     Each step has its count, % of sessions, step-to-step % (vs the previous
     available step), and the same numbers for the comparison window.
     """
-    days, pv_available = _daily_funnel(store)
     tz = ZoneInfo(store.timezone or "UTC")
     yesterday = datetime.now(tz).date() - timedelta(days=1)
 
-    if period == "last7":
+    if period == "today":
+        current, previous, pv_available, now = _today_funnel(store)
+        lw = now.date() - timedelta(days=7)
+        period_label = f"Today so far ({now.strftime('%a %d %b')}, as of {now.strftime('%H:%M')} store time)"
+        compare_label = (
+            f"vs {lw.strftime('%a %d %b')} up to the same hour" if previous is not None
+            else "no comparison available"
+        )
+    else:
+        days, pv_available = _daily_funnel(store)
+
+    if period == "today":
+        pass
+    elif period == "last7":
         cur_dates = [(yesterday - timedelta(days=i)).isoformat() for i in range(7)]
         prev_dates = [(yesterday - timedelta(days=i)).isoformat() for i in range(7, 14)]
         period_label = f"Last 7 days ({(yesterday - timedelta(days=6)).strftime('%d %b')} - {yesterday.strftime('%d %b')})"
@@ -271,8 +397,9 @@ def fetch_funnel_compare(store: models.Store, period: str = "yesterday") -> dict
         period_label = f"Yesterday ({yesterday.strftime('%a %d %b')})"
         compare_label = f"vs {last_week.strftime('%a %d %b')} (same weekday last week)"
 
-    current = _sum_window(days, cur_dates, pv_available)
-    previous = _sum_window(days, prev_dates, pv_available)
+    if period != "today":
+        current = _sum_window(days, cur_dates, pv_available)
+        previous = _sum_window(days, prev_dates, pv_available)
 
     steps = []
     prev_key = None

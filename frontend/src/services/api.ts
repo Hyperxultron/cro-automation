@@ -247,8 +247,10 @@ export type FunnelStep = {
   step_change_pts: number | null;
 };
 
+export type LandingRange = "today" | "yesterday" | 7 | 28;
+
 export type FunnelCompare = {
-  period: "yesterday" | "last7";
+  period: "today" | "yesterday" | "last7";
   period_label: string;
   compare_label: string;
   product_views_available: boolean;
@@ -471,7 +473,7 @@ export const api = {
   ordersTrend: (days = 7) =>
     request<{ days: number; trend: OrdersTrendDay[] }>(`/dashboard/orders-trend?days=${days}`),
   funnel: () => request<Funnel>("/dashboard/funnel"),
-  funnelCompare: (period: "yesterday" | "last7" = "yesterday") =>
+  funnelCompare: (period: "today" | "yesterday" | "last7" = "yesterday") =>
     request<FunnelCompare>(`/dashboard/funnel-compare?period=${period}`),
   funnelTrend: (days = 7) =>
     request<{ days: number; trend: FunnelTrendDay[] }>(`/dashboard/funnel-trend?days=${days}`),
@@ -493,7 +495,10 @@ export const api = {
   siteHealth: (days = 28) => request<SiteHealthData>(`/dashboard/site-health?days=${days}`),
   cartExtras: (days = 28, threshold?: number | null) =>
     request<CartExtras>(`/dashboard/cart-extras?days=${days}${threshold ? `&threshold=${threshold}` : ""}`),
-  landingPages: (days = 28) => request<LandingPagesData>(`/dashboard/landing-pages?days=${days}`),
+  landingPages: (range: LandingRange = 28) =>
+    request<LandingPagesData>(
+      typeof range === "number" ? `/dashboard/landing-pages?days=${range}` : `/dashboard/landing-pages?period=${range}`,
+    ),
   productAnalytics: (days = 28) => request<ProductAnalyticsData>(`/dashboard/product-analytics?days=${days}`),
   productPerformance: (days = 30) =>
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),

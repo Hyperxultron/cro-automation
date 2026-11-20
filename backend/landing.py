@@ -46,7 +46,8 @@ query Landing($q: String!) {
 CACHE_SECONDS = 600
 _cache: dict = {}
 
-MIN_SESSIONS = 100          # below this a page's rates swing too much to judge
+MIN_SESSIONS = 100
+_MIN_DEFAULT = MIN_SESSIONS          # below this a page's rates swing too much to judge
 BOUNCE_FLAG_PTS = 5.0       # "above its own bounce history" = 5+ points worse
 SESSION_METRICS = "sessions, bounce_rate, added_to_cart_rate, conversion_rate"
 
@@ -124,7 +125,8 @@ def _since(a, b) -> str:
     return f"SINCE {a.isoformat()} UNTIL {b.isoformat()}"
 
 
-def _split(cur: dict[str, dict], prev: dict[str, dict]) -> list[dict]:
+def _split(cur: dict[str, dict], prev: dict[str, dict], min_sessions: int | None = None) -> list[dict]:
+    MIN_SESSIONS = min_sessions or _MIN_DEFAULT
     rows = []
     for label, v in sorted(cur.items(), key=lambda kv: -kv[1]["sessions"]):
         p = prev.get(label)
@@ -148,13 +150,38 @@ def _split(cur: dict[str, dict], prev: dict[str, dict]) -> list[dict]:
     return rows
 
 
-def fetch_landing_pages(store: models.Store, days: int = 28) -> dict:
-    key = (store.store_url, days, datetime.now(_tz(store)).date().isoformat())
+MIN_SESSIONS_ONE_DAY = 30  # a single day has far fewer visits per page
+
+
+def fetch_landing_pages(store: models.Store, days: int = 28, period: str | None = None) -> dict:
+    """
+    period None: last `days` complete days vs the `days` before.
+    period "yesterday": yesterday vs the same weekday last week.
+    period "today": today so far (live) vs the same weekday last week, full day
+                    (rates like bounce % compare fine; session counts won't).
+    """
+    now = datetime.now(_tz(store))
+    key = (store.store_url, days, period, now.date().isoformat())
     cached = _cache.get(key)
     if cached and cached[0] > time.time():
         return cached[1]
 
-    first, last, p_first, p_last = _windows(store, days)
+    if period == "today":
+        first = last = now.date()
+        p_first = p_last = first - timedelta(days=7)
+        window_label = f"Today so far ({first.strftime('%a %d %b')}, as of {now.strftime('%H:%M')} store time)"
+        compare_label = f"{p_first.strftime('%a %d %b')} (full day)"
+    elif period == "yesterday":
+        first = last = now.date() - timedelta(days=1)
+        p_first = p_last = first - timedelta(days=7)
+        window_label = f"Yesterday ({first.strftime('%a %d %b')}, complete day)"
+        compare_label = f"{p_first.strftime('%a %d %b')} (same weekday last week)"
+    else:
+        period = None
+        first, last, p_first, p_last = _windows(store, days)
+        window_label = f"{first.strftime('%d %b')} - {last.strftime('%d %b')} (last {days} complete days)"
+        compare_label = f"{p_first.strftime('%d %b')} - {p_last.strftime('%d %b')}"
+    min_s = MIN_SESSIONS_ONE_DAY if period else MIN_SESSIONS
     cur_w, prev_w = _since(first, last), _since(p_first, p_last)
     H = HUMAN_SESSIONS_FILTER
 
@@ -217,7 +244,7 @@ def fetch_landing_pages(store: models.Store, days: int = 28) -> dict:
         s["orders"] += _i(r.get("orders"))
 
     page_rows = []
-    for row in _split(pages, prev_pages):
+    for row in _split(pages, prev_pages, min_s):
         path = row["label"]
         sale = sales.get(path)
         revenue = round(sale["revenue"], 2) if sale else (0.0 if sales_ok else None)
@@ -237,16 +264,17 @@ def fetch_landing_pages(store: models.Store, days: int = 28) -> dict:
 
     total_sessions = sum(p["sessions"] for p in pages.values())
     types = _split(_rate_rows(results.get("types") or [], "landing_page_type"),
-                   _rate_rows(results.get("types_prev") or [], "landing_page_type"))
+                   _rate_rows(results.get("types_prev") or [], "landing_page_type"), min_s)
     for t in types:
         t["share_of_sessions"] = round(t["sessions"] / total_sessions * 100, 1) if total_sessions else None
 
     result = {
         "days": days,
-        "window_label": f"{first.strftime('%d %b')} - {last.strftime('%d %b')} (last {days} complete days)",
-        "compare_label": f"{p_first.strftime('%d %b')} - {p_last.strftime('%d %b')}",
+        "period": period or f"last{days}",
+        "window_label": window_label,
+        "compare_label": compare_label,
         "bounce_definition": "Shopify definition: a bounce is a visit that saw only one page. Bounce rate = bounces ÷ sessions. Bots excluded.",
-        "min_sessions": MIN_SESSIONS,
+        "min_sessions": min_s,
         "bounce_flag_pts": BOUNCE_FLAG_PTS,
         "revenue_available": sales_ok,
         "revenue_note": (
@@ -256,10 +284,10 @@ def fetch_landing_pages(store: models.Store, days: int = 28) -> dict:
         "pages": page_rows,
         "page_types": types,
         "by_source": _split(_rate_rows(results.get("sources") or [], "referrer_source"),
-                            _rate_rows(results.get("sources_prev") or [], "referrer_source")),
+                            _rate_rows(results.get("sources_prev") or [], "referrer_source"), min_s),
         "by_device": _split(_rate_rows(results.get("devices") or [], "session_device_type"),
-                            _rate_rows(results.get("devices_prev") or [], "session_device_type")),
+                            _rate_rows(results.get("devices_prev") or [], "session_device_type"), min_s),
         "errors": errors,
     }
-    _cache[key] = (time.time() + CACHE_SECONDS, result)
+    _cache[key] = (time.time() + (300 if period == "today" else CACHE_SECONDS), result)
     return result

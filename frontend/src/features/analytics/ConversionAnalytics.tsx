@@ -180,7 +180,7 @@ function ConversionAnalytics() {
   const [deviceSplit, setDeviceSplit] = useState<SegmentSplit | null>(null);
   const [channelSplit, setChannelSplit] = useState<SegmentSplit | null>(null);
   const [segmentsLoading, setSegmentsLoading] = useState(true);
-  const [funnelPeriod, setFunnelPeriod] = useState<"yesterday" | "last7">("last7");
+  const [funnelPeriod, setFunnelPeriod] = useState<"today" | "yesterday" | "last7">("last7");
   const [funnel, setFunnel] = useState<FunnelCompare | null>(null);
   const [funnelLoading, setFunnelLoading] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -340,6 +340,7 @@ function ConversionAnalytics() {
             {([
               { key: "last7", label: "Last 7 vs prior 7" },
               { key: "yesterday", label: "Yesterday vs last week" },
+              { key: "today", label: "Today so far" },
             ] as const).map((opt) => (
               <button
                 key={opt.key}

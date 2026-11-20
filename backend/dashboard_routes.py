@@ -271,7 +271,7 @@ def funnel(shop: str | None = Query(None), db: Session = Depends(get_db)):
 
 @router.get("/funnel-compare")
 def funnel_compare(
-    period: str = Query("yesterday", pattern="^(yesterday|last7)$"),
+    period: str = Query("yesterday", pattern="^(today|yesterday|last7)$"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
@@ -484,13 +484,14 @@ def product_analytics(
 @router.get("/landing-pages")
 def landing_pages(
     days: int = Query(28, ge=7, le=90),
+    period: str | None = Query(None, pattern="^(today|yesterday)$"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """Landing pages, page types and bounce by source / device (checklist section 5)."""
     store = _get_store(db, shop)
     try:
-        return fetch_landing_pages(store, days=days)
+        return fetch_landing_pages(store, days=days, period=period)
     except Exception as exc:
         logger.exception("Landing pages failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
