@@ -215,6 +215,21 @@ def fetch_overview(
             else f"vs {weeks}-week {WEEKDAY_NAMES[target_date.weekday()]} average"
         )
 
+    # Revenue = Shopify's own "Total sales" (ShopifyQL), so it matches Shopify
+    # to the cent: refunds and their tax land on the refund day there, which
+    # summing our synced orders by order date can't do. Orders / AOV stay
+    # from synced orders. Falls back to synced orders if ShopifyQL fails.
+    revenue_source = "shopify"
+    try:
+        from shopify_sales import window_money
+
+        ql_cur, ql_base = window_money(store, period, compare, target_date, now_local)
+        current = {**current, "revenue": ql_cur["total"]}
+        baseline = {**baseline, "revenue": ql_base["total"]}
+    except Exception as exc:
+        revenue_source = "orders"
+        warnings.append(f"Revenue is from synced orders (Shopify Analytics didn't answer: {str(exc)[:80]}).")
+
     too_early_orders = current["orders"] < MIN_ORDERS_FOR_COMPARISON
 
     metrics = {
@@ -329,4 +344,5 @@ def fetch_overview(
         "health": health,
         "cvr_error": cvr_error,
         "warnings": warnings,
+        "revenue_source": revenue_source,
     }

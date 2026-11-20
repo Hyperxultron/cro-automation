@@ -29,6 +29,7 @@ product-only vs shipping-only - splitting that out would require assuming a
 breakdown Shopify doesn't actually give us per-field.
 """
 
+import logging
 from datetime import datetime, timedelta, timezone as dt_tz
 
 from sqlalchemy import func
@@ -45,6 +46,8 @@ from overview import (
     _tz,
     history_start_date,
 )
+
+logger = logging.getLogger("sales")
 
 _KEYS = ("orders", "total", "gross", "discounts", "returns", "net", "shipping", "tax")
 _EMPTY = {k: None for k in _KEYS}
@@ -107,16 +110,33 @@ def fetch_sales_trend(db: Session, store: models.Store, days: int = 14, include_
         return {"date": day.isoformat(), "revenue": stats["total"], "orders": stats["orders"]}
 
     end = today if include_today else yesterday
+    # Daily Total sales from Shopify Analytics (matches Shopify to the cent,
+    # refunds on their refund day). Orders per day still from synced orders.
+    ql = None
+    try:
+        from shopify_sales import daily_sales
+
+        ql = daily_sales(store, end - timedelta(days=2 * days - 1), end)
+    except Exception as exc:
+        logger.warning("ShopifyQL sales trend failed, using synced orders: %s", exc)
+
+    def point_ql(day):
+        p = point(day)
+        if ql is not None and day.isoformat() in ql:
+            p["revenue"] = round(ql[day.isoformat()]["total"], 2)
+        return p
+
     current = []
     previous = []
     for i in range(days - 1, -1, -1):
         day = end - timedelta(days=i)
-        current.append(point(day))
-        previous.append(point(day - timedelta(days=days)))
+        current.append(point_ql(day))
+        previous.append(point_ql(day - timedelta(days=days)))
 
     return {
         "days": days,
         "include_today": include_today,
+        "source": "shopify" if ql is not None else "orders",
         "today": today.isoformat(),
         "history_start": history_start.isoformat() if history_start else None,
         "current": current,
@@ -188,6 +208,21 @@ def fetch_sales_breakdown(db: Session, store: models.Store, period: str = "yeste
         )
         baseline_label = f"vs 4-week {WEEKDAY_NAMES[target_date.weekday()]} average"
 
+    # Money rows straight from Shopify Analytics, so they match Shopify's
+    # "Total sales breakdown" exactly (refunds land on the refund day there).
+    # Order counts stay from our synced orders (used for "too early").
+    source = "shopify"
+    try:
+        from shopify_sales import window_money
+
+        ql_cur, ql_base = window_money(store, period, compare, target_date, now_local)
+        money = ("gross", "discounts", "returns", "net", "shipping", "tax", "total")
+        current = {**current, **{k: ql_cur[k] for k in money}}
+        baseline = {**baseline, **{k: ql_base[k] for k in money}}
+    except Exception as exc:
+        logger.warning("ShopifyQL sales breakdown failed, using synced orders: %s", exc)
+        source = "orders"
+
     too_early = current["orders"] < MIN_ORDERS_FOR_COMPARISON
 
     def row(key, label):
@@ -204,11 +239,18 @@ def fetch_sales_breakdown(db: Session, store: models.Store, period: str = "yeste
         "rows": [
             row("gross", "Gross sales"),
             row("discounts", "Discounts"),
-            row("returns", "Sales reversals (refunds)"),
+            row("returns", "Sales reversals (returns)"),
             row("net", "Net sales"),
             row("shipping", "Shipping charges"),
             row("tax", "Taxes"),
             row("total", "Total sales"),
         ],
-        "note": "Same rows as Shopify Analytics. Sales reversals = money refunded on orders (can include refunded shipping or tax). Return fees aren't synced yet.",
+        "source": source,
+        "note": (
+            "Straight from Shopify Analytics, same rows as Shopify's Total sales breakdown. "
+            "Returns are counted on the day of the refund, like Shopify."
+            if source == "shopify" else
+            "Shopify Analytics didn't answer, so these are from our synced orders "
+            "(refunds are counted on the order's day here, so they can differ a bit from Shopify)."
+        ),
     }
