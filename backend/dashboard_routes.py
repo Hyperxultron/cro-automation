@@ -528,7 +528,7 @@ def cart_extras(
     days: int = Query(28, ge=7, le=90),
     period: str | None = Query(None, pattern="^(today|yesterday)$"),
     threshold: float | None = Query(None, ge=0),
-    compare: str | None = Query(None, pattern="^(previous|last_week|4week_avg)$"),
+    compare: str | None = Query(None, pattern="^(previous|last_week|4week_avg|4weeks_ago|last_year)$"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):

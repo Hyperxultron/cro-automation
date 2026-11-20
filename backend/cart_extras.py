@@ -223,15 +223,21 @@ def _items(qtys: list[int]) -> dict:
     }
 
 
-COMPARE_MODES = ("previous", "last_week", "4week_avg")
+COMPARE_MODES = ("previous", "last_week", "4week_avg", "4weeks_ago", "last_year")
 
 
 def _compare_windows(first, last, mode: str):
     """[(first, last)] baseline windows for the chosen comparison.
     previous  - the same number of days just before
     last_week - the same days one week earlier (ranges up to 7 days)
-    4week_avg - the same weekday in each of the 4 previous weeks (single days)"""
+    4week_avg - the same weekday in each of the 4 previous weeks (single days)
+    4weeks_ago - the same days 4 weeks earlier ("last month", weekdays line up)
+    last_year - the same days 52 weeks earlier (weekdays line up)"""
     n = (last - first).days + 1
+    if mode == "4weeks_ago":
+        return [(first - timedelta(days=28), last - timedelta(days=28))]
+    if mode == "last_year":
+        return [(first - timedelta(days=364), last - timedelta(days=364))]
     if mode == "last_week" and n <= 7:
         return [(first - timedelta(days=7), last - timedelta(days=7))]
     if mode == "4week_avg" and n == 1:
@@ -245,7 +251,11 @@ def _compare_label(wins, mode: str, partial_today: bool) -> str:
     a, b = wins[0]
     if a == b:
         txt = a.strftime("%a %d %b")
+        if mode == "last_year":
+            txt = a.strftime("%a %d %b %Y")
         return txt + (" (same time of day)" if partial_today else "")
+    if mode == "last_year":
+        return f"{a.strftime('%d %b %Y')} - {b.strftime('%d %b %Y')}"
     return f"{a.strftime('%d %b')} - {b.strftime('%d %b')}"
 
 
@@ -261,9 +271,17 @@ def _baseline(db: Session, store: models.Store, first, last, mode: str, period: 
         pay, pay_err = _payments(store, wins[-1][0], wins[0][0], wanted=wanted, divisor=k)
     else:
         pay, pay_err = _payments(store, wins[0][0], wins[0][1])
+    # Order values come from our synced copy of orders, which only goes back
+    # so far. If the baseline starts before our oldest order, a comparison
+    # would be against missing data, so we leave it out and say why.
+    oldest = db.query(func.min(models.Order.created_at)).filter(models.Order.store_id == store.id).scalar()
+    base_start, _ = _day_bounds_utc(min(w[0] for w in wins), tz)
+    if oldest is not None and oldest.tzinfo is None and base_start.tzinfo is not None:
+        base_start = base_start.replace(tzinfo=None)
+    orders_covered = oldest is not None and oldest <= base_start + timedelta(days=1)
     values: list[float] = []
     qtys: list[int] = []
-    for a, b in wins:
+    for a, b in (wins if orders_covered else []):
         cut = None
         if partial:
             # Today so far vs the same clock time on the baseline day.
@@ -282,14 +300,20 @@ def _baseline(db: Session, store: models.Store, first, last, mode: str, period: 
         "payment_counts_comparable": not partial,
         "payments": pay,
         "payments_error": pay_err,
-        "order_values": {
+        "orders_note": None if orders_covered else (
+            "Order value and basket size can't be compared for these dates: "
+            "the dashboard's copy of orders doesn't go back that far."
+        ),
+        "order_values": None if not orders_covered else {
             "orders": round(ov["orders"] / k, 1),
             "average": ov["average"],
             "median": ov["median"],
             "near_threshold_share": ov["near_threshold_share"],
             "at_or_above_threshold_share": ov["at_or_above_threshold_share"],
         },
-        "items_per_order": {"average_items": ip["average_items"], "single_item_share": ip["single_item_share"]},
+        "items_per_order": None if not orders_covered else {
+            "average_items": ip["average_items"], "single_item_share": ip["single_item_share"],
+        },
     }
 
 

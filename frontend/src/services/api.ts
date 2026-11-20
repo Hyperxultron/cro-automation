@@ -386,7 +386,7 @@ export type CartExtras = {
   not_available: string[];
 };
 
-export type CartCompare = "previous" | "last_week" | "4week_avg";
+export type CartCompare = "previous" | "last_week" | "4week_avg" | "4weeks_ago" | "last_year";
 
 export type CartCompareData = {
   mode: CartCompare;
@@ -402,6 +402,7 @@ export type CartCompareData = {
     authorization_rate: number | null;
   } | null;
   payments_error?: string | null;
+  orders_note?: string | null;
   order_values?: {
     orders: number;
     average: number | null;

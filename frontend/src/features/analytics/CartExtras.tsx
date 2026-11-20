@@ -27,12 +27,20 @@ function compareOptions(range: LandingRange): { key: CartCompare; label: string 
       { key: "4week_avg", label: "4-week same-weekday average" },
       { key: "last_week", label: "Same weekday last week" },
       { key: "previous", label: "Previous day" },
+      { key: "last_year", label: "Same weekday last year" },
     ];
   }
   if (range === 7) {
-    return [{ key: "previous", label: "Previous 7 days" }];
+    return [
+      { key: "previous", label: "Previous 7 days" },
+      { key: "4weeks_ago", label: "Same 7 days last month" },
+      { key: "last_year", label: "Same 7 days last year" },
+    ];
   }
-  return [{ key: "previous", label: `Previous ${range} days` }];
+  return [
+    { key: "previous", label: `Previous ${range} days` },
+    { key: "last_year", label: `Same ${range} days last year` },
+  ];
 }
 
 type Better = "up" | "down" | null; // which direction is good; null = neutral
@@ -175,8 +183,7 @@ function CartExtras() {
                   setData(null);
                   setCompareMode(e.target.value as CartCompare);
                 }}
-                disabled={opts.length < 2}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none disabled:opacity-100"
+                className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none"
               >
                 {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
               </select>
@@ -210,6 +217,8 @@ function CartExtras() {
   const vsLine = cmp?.label ? (
     <span className="text-slate-400"> · compared with <b className="font-semibold text-slate-600">{cmp.label}</b></span>
   ) : data.comparison?.error ? <span className="text-amber-700"> · comparison not available right now</span> : null;
+  // Order value / basket comparisons need our synced orders for the baseline dates.
+  const ordersVsLine = cmp?.orders_note ? <span className="text-amber-700"> · {cmp.orders_note}</span> : vsLine;
 
   return (
     <div className="space-y-6">
@@ -276,7 +285,7 @@ function CartExtras() {
             <Truck className="text-blue-500" size={20} />
             <div>
               <h3 className="font-bold text-slate-900">Order values &amp; free-shipping threshold<InfoTip text={HELP.orderValues} /></h3>
-              <p className="text-xs text-slate-500">{data.window_label}{vsLine}</p>
+              <p className="text-xs text-slate-500">{data.window_label}{ordersVsLine}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 text-sm">
@@ -346,7 +355,7 @@ function CartExtras() {
           <Layers className="text-blue-500" size={20} />
           <div>
             <h3 className="font-bold text-slate-900">Items per order<InfoTip text={HELP.itemsPerOrder} /></h3>
-            <p className="text-xs text-slate-500">{data.window_label}{vsLine}</p>
+            <p className="text-xs text-slate-500">{data.window_label}{ordersVsLine}</p>
           </div>
         </div>
         <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
