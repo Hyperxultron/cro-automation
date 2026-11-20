@@ -335,6 +335,17 @@ export type OverviewMetric = {
   base_label?: string;
 };
 
+export type SpeedRating = "good" | "needs_improvement" | "poor" | null;
+export type MobileSpeed = {
+  day: string;
+  day_label: string;
+  lcp_ms: number | null; lcp_rating: SpeedRating;
+  inp_ms: number | null; inp_rating: SpeedRating;
+  cls: number | null; cls_rating: SpeedRating;
+  rating: "good" | "needs_improvement" | "poor";
+  page_loads: number;
+};
+
 export type Overview = {
   period: "yesterday" | "today" | "last7";
   period_label: string;
@@ -348,11 +359,13 @@ export type Overview = {
     revenue: OverviewMetric;
     aov: OverviewMetric;
     conversion_rate: OverviewMetric;
+    sessions?: OverviewMetric;
+    revenue_per_session?: OverviewMetric;
   };
   health: {
     last_order_at: string | null;
     last_synced_at?: string | null;
-    mobile_page_speed: number | null;
+    mobile_page_speed: MobileSpeed | null;
     mobile_page_speed_status: "not_available" | "ok";
   };
   cvr_error: string | null;
@@ -767,15 +780,16 @@ export const api = {
     request<{ deleted: number }>(`/dashboard/change-log/${id}`, { method: "DELETE" }),
 };
 
-export function formatMoney(value: number, currency?: string | null) {
+export function formatMoney(value: number, currency?: string | null, digits = 0) {
   try {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: currency || "USD",
-      maximumFractionDigits: 0,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     }).format(value);
   } catch {
-    return `${value.toFixed(0)} ${currency || ""}`.trim();
+    return `${value.toFixed(digits)} ${currency || ""}`.trim();
   }
 }
 

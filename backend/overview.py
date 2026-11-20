@@ -17,6 +17,7 @@ This module is additive: it does not touch /dashboard/summary (still used by
 the alarm cards), it only powers the new /dashboard/overview endpoint.
 """
 
+import logging
 from datetime import datetime, timedelta, time as dtime, timezone as dt_tz
 from zoneinfo import ZoneInfo
 
@@ -30,6 +31,8 @@ from cvr import fetch_daily_cvr
 # sessions a day" as of 19 Nov 2026 - re-check if traffic changes a lot).
 MIN_ORDERS_FOR_COMPARISON = 20
 MIN_SESSIONS_FOR_COMPARISON = 500
+
+logger = logging.getLogger("overview")
 
 WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -242,6 +245,7 @@ def fetch_overview(
     cvr_value = None
     cvr_sessions = None
     cvr_baseline = None
+    sessions_baseline = None
     cvr_too_early = True
     cvr_error = None
     cvr_converted = None
@@ -257,6 +261,7 @@ def fetch_overview(
             cvr_value = round(cvr_converted / cvr_sessions * 100, 2) if cvr_sessions else None
             if prev and prev["sessions"]:
                 cvr_baseline = round(prev["completed_checkout"] / prev["sessions"] * 100, 2)
+                sessions_baseline = prev["sessions"]
             cvr_too_early = (cvr_sessions or 0) < MIN_SESSIONS_FOR_COMPARISON
             raise _Done()
         daily = fetch_daily_cvr(db, store, days=35)
@@ -277,6 +282,7 @@ def fetch_overview(
             total_orders_7d = current["orders"]
             cvr_value = round(total_orders_7d / cvr_sessions * 100, 2) if cvr_sessions else None
             prior_sessions = sum(r["sessions"] for r in prior_rows) or None
+            sessions_baseline = prior_sessions
             # baseline["orders"] is already the prior 7-day TOTAL (the window
             # spans 7 days), so no extra *7 here.
             cvr_baseline = (
@@ -292,6 +298,8 @@ def fetch_overview(
                 weekday_dates = [d.isoformat() for d in _same_weekday_dates_back(target_date, 4)]
             comparable = [by_date[d]["cvr"] for d in weekday_dates if by_date.get(d) and by_date[d]["cvr"] is not None]
             cvr_baseline = round(sum(comparable) / len(comparable), 2) if comparable else None
+            base_sessions = [by_date[d]["sessions"] for d in weekday_dates if by_date.get(d) and by_date[d]["sessions"]]
+            sessions_baseline = round(sum(base_sessions) / len(base_sessions)) if base_sessions else None
         cvr_too_early = (cvr_sessions or 0) < MIN_SESSIONS_FOR_COMPARISON
     except _Done:
         pass
@@ -302,6 +310,19 @@ def fetch_overview(
         cvr_value, cvr_baseline, cvr_too_early, baseline_label
     )
     metrics["conversion_rate"]["sessions"] = cvr_sessions
+
+    # Sessions and revenue per session (checklist section 2, P1 KPI tiles).
+    # Same comparison as the other tiles; too early below ~500 sessions.
+    sessions_too_early = (cvr_sessions or 0) < MIN_SESSIONS_FOR_COMPARISON
+    metrics["sessions"] = _metric_block(cvr_sessions, sessions_baseline, sessions_too_early, baseline_label, 0)
+    rps = round(current["revenue"] / cvr_sessions, 2) if cvr_sessions and current.get("revenue") is not None else None
+    rps_base = (
+        round(baseline["revenue"] / sessions_baseline, 2)
+        if sessions_baseline and baseline.get("revenue") is not None else None
+    )
+    metrics["revenue_per_session"] = _metric_block(
+        rps, rps_base, sessions_too_early or too_early_orders, baseline_label
+    )
     metrics["conversion_rate"]["base_label"] = (
         f"{cvr_converted:,} buying sessions of {cvr_sessions:,}" if cvr_sessions and cvr_converted is not None
         else (f"{cvr_sessions:,} sessions" if cvr_sessions else "sessions pending")
@@ -322,14 +343,19 @@ def fetch_overview(
             f"Orders were last copied from Shopify at {when} (store time), so the newest orders may be missing. "
             "Refresh in a minute."
         )
+    # Mobile page speed: Shopify's own Core Web Vitals for mobile, latest
+    # day Shopify has published (it arrives ~1-2 days late). Cached 1 hour.
+    try:
+        from site_health import mobile_speed_snapshot
+        speed = mobile_speed_snapshot(store, yesterday_date)
+    except Exception as exc:
+        logger.warning("Mobile page speed failed: %s", exc)
+        speed = None
     health = {
         "last_order_at": last_order.isoformat() if last_order else None,
         "last_synced_at": synced.isoformat() if synced else None,
-        # Mobile page speed / Core Web Vitals needs a new data source (not yet
-        # wired up - see the manager's "Site health" section). Reported as
-        # unavailable rather than faked.
-        "mobile_page_speed": None,
-        "mobile_page_speed_status": "not_available",
+        "mobile_page_speed": speed,
+        "mobile_page_speed_status": "ok" if speed else "not_available",
     }
 
     return {

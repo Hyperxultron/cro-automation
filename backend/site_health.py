@@ -290,3 +290,40 @@ def fetch_site_health(store: models.Store, days: int = 28, period: str | None = 
     }
     _cache[key] = (time.time() + (120 if period == "today" else CACHE_SECONDS), result)
     return result
+
+
+_speed_cache: dict = {}
+
+
+def mobile_speed_snapshot(store: models.Store, upto) -> dict | None:
+    """
+    Overview health strip: mobile Core Web Vitals (p75) for the latest day
+    Shopify has published (<= upto). None if Shopify has no page speed data.
+    Cached for an hour - it changes once a day.
+    """
+    key = (store.store_url, upto.isoformat())
+    hit = _speed_cache.get(key)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    day, err = _latest_day_with_data(store, "web_performance", "page_loads", upto)
+    if err:
+        raise RuntimeError(err)
+    out = None
+    if day:
+        rows = _run(store, f"FROM web_performance SHOW {CWV_SHOW} WHERE device_type = 'Mobile' {_since(day, day)}")
+        if rows:
+            v = _vitals(rows[0])
+            if v["lcp"]["p75"] is not None:
+                ratings = [v[m]["rating"] for m in ("lcp", "inp", "cls") if v[m]["rating"]]
+                overall = "poor" if "poor" in ratings else ("needs_improvement" if "needs_improvement" in ratings else "good")
+                out = {
+                    "day": day.isoformat(),
+                    "day_label": _day_label(day),
+                    "lcp_ms": v["lcp"]["p75"], "lcp_rating": v["lcp"]["rating"],
+                    "inp_ms": v["inp"]["p75"], "inp_rating": v["inp"]["rating"],
+                    "cls": v["cls"]["p75"], "cls_rating": v["cls"]["rating"],
+                    "rating": overall,
+                    "page_loads": v["page_loads"],
+                }
+    _speed_cache[key] = (time.time() + 3600, out)
+    return out

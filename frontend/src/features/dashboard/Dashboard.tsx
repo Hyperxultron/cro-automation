@@ -50,10 +50,10 @@ const changeBothWays = (absValue: number | null, pctValue: number | null, absUni
 };
 
 // Same "both ways" format for money: "+$1,000 (+16.7%)".
-const moneyChangeBothWays = (absValue: number | null, pctValue: number | null, currency?: string | null) => {
+const moneyChangeBothWays = (absValue: number | null, pctValue: number | null, currency?: string | null, digits = 0) => {
     if (absValue === null || pctValue === null) return "—";
     const sign = absValue > 0 ? "+" : absValue < 0 ? "-" : "";
-    return `${sign}${formatMoney(Math.abs(absValue), currency)} (${pctValue > 0 ? "+" : ""}${pctValue}%)`;
+    return `${sign}${formatMoney(Math.abs(absValue), currency, digits)} (${pctValue > 0 ? "+" : ""}${pctValue}%)`;
 };
 
 // Same "too early to compare" threshold as the backend (checklist section 1, P1).
@@ -740,15 +740,36 @@ function Dashboard() {
                                         </p>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <div className="rounded-lg bg-slate-100 p-2 text-slate-400"><Gauge size={16} /></div>
-                                    <div>
-                                        <p className="text-xs text-slate-400">Mobile page speed</p>
-                                        <p className="text-sm font-semibold text-slate-400">
-                                            Not available yet <span className="font-normal text-slate-400">(Core Web Vitals not wired up)</span>
-                                        </p>
-                                    </div>
-                                </div>
+                                {(() => {
+                                    const sp = overview?.health.mobile_page_speed;
+                                    const tone = !sp ? "bg-slate-100 text-slate-400"
+                                        : sp.rating === "good" ? "bg-emerald-50 text-emerald-600"
+                                        : sp.rating === "poor" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600";
+                                    const word = !sp ? "" : sp.rating === "good" ? "Good" : sp.rating === "poor" ? "Poor" : "Needs work";
+                                    const chip = (r: string | null) => r === "good" ? "text-emerald-600" : r === "poor" ? "text-red-600" : r ? "text-amber-600" : "text-slate-400";
+                                    return (
+                                        <button type="button" onClick={() => setActiveNav("Site Health")} className="flex items-center gap-2 text-left" title="Open Site Health">
+                                            <div className={`rounded-lg p-2 ${tone}`}><Gauge size={16} /></div>
+                                            <div>
+                                                <p className="text-xs text-slate-400">Mobile page speed{sp ? ` · ${sp.day_label}` : ""}</p>
+                                                {sp ? (
+                                                    <p className="text-sm font-semibold text-slate-800">
+                                                        {word}
+                                                        <span className="ml-2 text-xs font-medium">
+                                                            <span className={chip(sp.lcp_rating)}>LCP {sp.lcp_ms != null ? (sp.lcp_ms / 1000).toFixed(1) + "s" : "—"}</span>
+                                                            <span className="text-slate-300"> · </span>
+                                                            <span className={chip(sp.inp_rating)}>INP {sp.inp_ms != null ? sp.inp_ms + "ms" : "—"}</span>
+                                                            <span className="text-slate-300"> · </span>
+                                                            <span className={chip(sp.cls_rating)}>CLS {sp.cls != null ? sp.cls.toFixed(2) : "—"}</span>
+                                                        </span>
+                                                    </p>
+                                                ) : (
+                                                    <p className="text-sm font-semibold text-slate-400">{loading ? "Loading…" : "No data from Shopify yet"}</p>
+                                                )}
+                                            </div>
+                                        </button>
+                                    );
+                                })()}
                             </div>
 
                             {error && (
@@ -761,12 +782,14 @@ function Dashboard() {
                                     {w}
                                 </div>
                             ))}
-                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                                 {(() => {
                                     const revenueMetric = overview?.metrics.revenue;
                                     const ordersMetric = overview?.metrics.orders;
                                     const aovMetric = overview?.metrics.aov;
                                     const cvrMetric = overview?.metrics.conversion_rate;
+                                    const sessMetric = overview?.metrics.sessions;
+                                    const rpsMetric = overview?.metrics.revenue_per_session;
                                     const periodLabel = overview?.period_label ?? "Loading…";
                                     const MoneyIcon = currency === "INR" ? IndianRupee : DollarSign;
 
@@ -778,11 +801,11 @@ function Dashboard() {
                                         return changePct >= 0 ? "emerald" : "red";
                                     };
 
-                                    const renderChange = (m: typeof revenueMetric, absUnit: string, money = false) => {
+                                    const renderChange = (m: typeof revenueMetric, absUnit: string, money = false, digits = 0) => {
                                         // Only a real change gets a chip (user asked for no small notes).
                                         if (!m || m.too_early || m.baseline_value === null) return { text: "", tone: "slate", showArrow: false };
                                         const text = money
-                                            ? moneyChangeBothWays(m.change_abs, m.change_pct, currency)
+                                            ? moneyChangeBothWays(m.change_abs, m.change_pct, currency, digits)
                                             : changeBothWays(m.change_abs, m.change_pct, absUnit);
                                         const tone = changeTone(m.change_pct, m.too_early);
                                         return { text, tone, showArrow: text !== "—" && m.change_pct !== null && m.change_pct !== 0 };
@@ -796,6 +819,14 @@ function Dashboard() {
                                     const revenueSpark = salesDays.map((d) => d.revenue);
                                     const ordersSpark = salesDays.map((d) => d.orders);
                                     const cvrSpark = trend.slice(-14).map((d) => d.cvr);
+                                    const sessByDate = new Map(trend.map((d) => [d.date, d.sessions]));
+                                    const aovSpark = salesDays.map((d) => (d.revenue != null && d.orders ? d.revenue / d.orders : null));
+                                    const sessSpark = trend.slice(-14).map((d) => d.sessions);
+                                    const rpsSpark = salesDays.map((d) => {
+                                        const s = sessByDate.get(d.date);
+                                        return d.revenue != null && s ? d.revenue / s : null;
+                                    });
+                                    const money2 = (v: number) => formatMoney(v, currency);
                                     const cards: {
                                         label: string; period: string; value: string; icon: typeof Bell; color: string;
                                         change: { text: string; tone: string; showArrow: boolean }; note: string;
@@ -809,27 +840,7 @@ function Dashboard() {
                                             icon: MoneyIcon, color: "rose",
                                             change: renderChange(revenueMetric, "", true),
                                             spark: revenueSpark,
-                                            note: aovMetric?.value != null
-                                                ? `AOV ${formatMoney(aovMetric.value, currency)} · ${baselineNote(revenueMetric, (v) => formatMoney(v, currency))}`
-                                                : "Loading…",
-                                        },
-                                        {
-                                            label: "Total Sales", help: "Shopify's Total sales (after discounts and returns, incl. tax and shipping), same as Shopify Analytics. Switch between today so far, yesterday and the last 30 complete days.",
-                                            period: kpiTotals?.labels[salesRange] ?? "…",
-                                            value: kpiTotals?.sales[salesRange] != null ? formatMoney(kpiTotals.sales[salesRange] as number, currency) : loading ? "…" : "—",
-                                            change: { text: "", tone: "slate", showArrow: false },
-                                            icon: MoneyIcon, color: "blue",
-                                            note: "",
-                                            range: { value: salesRange, set: setSalesRange },
-                                        },
-                                        {
-                                            label: "Conversion Rate", help: HELP.conversionRate,
-                                            period: periodLabel,
-                                            value: loading ? "…" : cvrMetric?.value != null ? `${cvrMetric.value}%` : "—",
-                                            icon: TrendingUp, color: "violet",
-                                            change: renderChange(cvrMetric, " pts"),
-                                            spark: cvrSpark,
-                                            note: cvrMetric?.base_label ?? (overview?.cvr_error ? "Shopify analytics unavailable" : "Loading…"),
+                                            note: baselineNote(revenueMetric, money2),
                                         },
                                         {
                                             label: "Orders", help: HELP.orders,
@@ -841,11 +852,56 @@ function Dashboard() {
                                             note: baselineNote(ordersMetric, (v) => String(v)),
                                         },
                                         {
+                                            label: "Average Order Value", help: "Average order value = sales after discounts / orders (cancelled and test orders left out). Compared the same way as the other cards.",
+                                            period: periodLabel,
+                                            value: loading ? "…" : aovMetric?.value != null ? formatMoney(aovMetric.value, currency, 2) : "—",
+                                            icon: ShoppingCart, color: "blue",
+                                            change: renderChange(aovMetric, "", true, 2),
+                                            spark: aovSpark,
+                                            note: baselineNote(aovMetric, (v) => formatMoney(v, currency, 2)),
+                                        },
+                                        {
+                                            label: "Conversion Rate", help: HELP.conversionRate,
+                                            period: periodLabel,
+                                            value: loading ? "…" : cvrMetric?.value != null ? `${cvrMetric.value}%` : "—",
+                                            icon: TrendingUp, color: "violet",
+                                            change: renderChange(cvrMetric, " pts"),
+                                            spark: cvrSpark,
+                                            note: cvrMetric?.base_label ?? (overview?.cvr_error ? "Shopify analytics unavailable" : "Loading…"),
+                                        },
+                                        {
+                                            label: "Sessions", help: "Visits to the store from Shopify Analytics, bots excluded. Compared the same way as the other cards; below ~500 sessions it's too early to compare.",
+                                            period: periodLabel,
+                                            value: loading ? "…" : sessMetric?.value != null ? sessMetric.value.toLocaleString() : "—",
+                                            icon: Users, color: "amber",
+                                            change: renderChange(sessMetric, ""),
+                                            spark: sessSpark,
+                                            note: baselineNote(sessMetric, (v) => v.toLocaleString()),
+                                        },
+                                        {
+                                            label: "Revenue per Session", help: "Revenue per session = Shopify total sales / sessions (bots excluded) for the same period. Shows conversion and order value together in one number.",
+                                            period: periodLabel,
+                                            value: loading ? "…" : rpsMetric?.value != null ? formatMoney(rpsMetric.value, currency, 2) : "—",
+                                            icon: MoneyIcon, color: "emerald",
+                                            change: renderChange(rpsMetric, "", true, 2),
+                                            spark: rpsSpark,
+                                            note: baselineNote(rpsMetric, (v) => formatMoney(v, currency, 2)),
+                                        },
+                                        {
+                                            label: "Total Sales", help: "Shopify's Total sales (after discounts and returns, incl. tax and shipping), same as Shopify Analytics. Switch between today so far, yesterday and the last 30 complete days.",
+                                            period: kpiTotals?.labels[salesRange] ?? "…",
+                                            value: kpiTotals?.sales[salesRange] != null ? formatMoney(kpiTotals.sales[salesRange] as number, currency) : loading ? "…" : "—",
+                                            change: { text: "", tone: "slate", showArrow: false },
+                                            icon: MoneyIcon, color: "blue",
+                                            note: "",
+                                            range: { value: salesRange, set: setSalesRange },
+                                        },
+                                        {
                                             label: "Total Sessions", help: "Visits to the store from Shopify Analytics, bots excluded (same as Shopify's Sessions). Switch between today so far, yesterday and the last 30 complete days.",
                                             period: kpiTotals?.labels[sessRange] ?? "…",
                                             value: kpiTotals?.sessions[sessRange] != null ? (kpiTotals.sessions[sessRange] as number).toLocaleString() : loading ? "…" : "—",
                                             change: { text: "", tone: "slate", showArrow: false },
-                                            icon: Users, color: "amber",
+                                            icon: Users, color: "rose",
                                             note: "",
                                             range: { value: sessRange, set: setSessRange },
                                         },
