@@ -568,6 +568,42 @@ export type CartCompareData = {
   items_per_order?: { average_items: number | null; single_item_share: number | null };
 };
 
+export type WhereRow = {
+  key: string;
+  label: string;
+  sessions: number;
+  previous_sessions: number;
+  sessions_change_pct: number | null;
+  conversion_rate: number | null;
+  previous_conversion_rate: number | null;
+  conversion_change_pts: number | null;
+  purchases: number;
+  previous_purchases: number;
+  purchases_change: number;
+  traffic_effect: number | null;
+  conversion_effect: number | null;
+  enough_data: boolean;
+  revenue_per_session?: number | null;
+  previous_revenue_per_session?: number | null;
+  revenue_per_session_change_pct?: number | null;
+};
+
+export type WhereMover = { dimension: "device" | "channel"; segment: string; kind: "traffic" | "conversion"; effect: number; good: boolean; text: string };
+
+export type WhereChanged = {
+  period: "yesterday" | "days";
+  days: number;
+  window_label: string;
+  compare_label: string;
+  too_early: boolean;
+  total_sessions: number;
+  min_segment_sessions: number;
+  device: WhereRow[];
+  channel: WhereRow[];
+  movers: WhereMover[];
+  errors: Record<string, string>;
+};
+
 export type SegmentSplit = {
   dimension: "device" | "channel";
   days: number;
@@ -735,6 +771,8 @@ export const api = {
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
   recommendations: (range: RecRange = 30) =>
     request<Recommendations>(`/dashboard/recommendations?${range === "yesterday" ? "period=yesterday" : `days=${range}`}`),
+  whereChanged: (range: "yesterday" | 7 | 28) =>
+    request<WhereChanged>(range === "yesterday" ? "/dashboard/where-changed?period=yesterday" : `/dashboard/where-changed?period=days&days=${range}`),
   overviewTrends: (days: 7 | 14 | 30) => request<OverviewTrends>(`/dashboard/overview-trends?days=${days}`),
   deeper: (days: 7 | 30 | 60) => request<DeeperData>(`/dashboard/deeper?days=${days}`),
   experiments: () =>

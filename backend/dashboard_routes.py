@@ -36,6 +36,7 @@ from overview import fetch_overview
 from shopify_sync import ensure_fresh_orders
 from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
+from where_changed import fetch_where_changed
 from deeper import fetch_deeper
 from overview_trends import fetch_overview_trends
 from experiments import METRICS as EXPERIMENT_METRICS, delete_experiment, list_experiments, save_experiment
@@ -764,6 +765,22 @@ def sales_breakdown(
 # Device / channel split (manager checklist, section 3 P1). Same ShopifyQL
 # `sessions` schema as cvr.py/funnel.py, just GROUP BY device or referrer.
 # ---------------------------------------------------------------------------
+
+@router.get("/where-changed")
+def where_changed(
+    period: str = Query("yesterday", pattern="^(yesterday|days)$"),
+    days: int = Query(7, ge=2, le=28),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Overview "Where it changed" (device / channel) + "Top movers" (checklist section 2, P2)."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_where_changed(store, period=period, days=days)
+    except Exception as exc:
+        logger.exception("Where-changed failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
 
 @router.get("/segments")
 def segments(

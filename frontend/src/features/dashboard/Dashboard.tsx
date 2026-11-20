@@ -11,6 +11,7 @@ import SettingsPage from "../settings/Settings";
 import StoreIntegration from "../store/StoreIntegration";
 import { BuyHeatmapCard, OverviewTrendsRow, SalesOverTimeChart, TrafficSourcesCard } from "./OceanCharts";
 import CroRecommendations from "../recommendations/CroRecommendations";
+import WhereChangedCard from "./WhereChanged";
 import Experiments, { type ExperimentPrefill } from "../experiments/Experiments";
 import DeeperAnalyses from "../analytics/DeeperAnalyses";
 import ConversionAnalytics from "../analytics/ConversionAnalytics";
@@ -1151,6 +1152,8 @@ function Dashboard() {
                             </section>
 
                             <OverviewTrendsRow currency={currency} />
+
+                            <WhereChangedCard currency={currency} />
 
                             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
                                 <BuyHeatmapCard />
