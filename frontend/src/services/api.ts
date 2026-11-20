@@ -132,7 +132,11 @@ export type ProductRow = {
   gross_sales?: number;
   discounts?: number;
   net_sales?: number;
+  refund_rate?: number | null;
 };
+
+export type ProductMover = { name: string; category: string; revenue: number; prior_revenue: number; quantity: number; prior_quantity: number; change: number; change_pct: number | null };
+export type ProductRefundRow = { name: string; category: string; gross_sales: number; refunded: number; refund_rate: number };
 
 export type CategoryRow = {
   category: string;
@@ -159,6 +163,14 @@ export type ProductAnalyticsData = {
   products: ProductRow[];
   categories: CategoryRow[];
   fix_first: ProductRow[];
+  movers?: { up: ProductMover[]; down: ProductMover[] };
+  refunds?: {
+    store_refund_rate: number | null;
+    total_refunded: number;
+    min_gross_sales: number;
+    by_rate: ProductRefundRow[];
+    by_amount: ProductRefundRow[];
+  } | null;
 };
 
 export type FunnelTrendDay = Funnel & {

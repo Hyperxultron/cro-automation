@@ -3,6 +3,7 @@ import { Info, Package, Search } from "lucide-react";
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { api, formatMoney, type DashboardSummary, type ProductAnalyticsData, type ProductGroup, type ProductRow } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
+import ProductMoversRefunds from "./ProductMoversRefunds";
 import { HELP } from "../../components/helpText";
 
 // Product and category analytics (manager checklist, section 4).
@@ -171,6 +172,8 @@ function ProductAnalytics() {
           )}
         </section>
       )}
+
+      <ProductMoversRefunds data={data} currency={currency} />
 
       {/* Category roll-up */}
       <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">

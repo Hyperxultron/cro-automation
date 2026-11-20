@@ -440,6 +440,53 @@ def fetch_product_analytics(db: Session, store: models.Store, days: int = 28) ->
     )
     products.sort(key=lambda p: p["revenue"], reverse=True)
 
+    # 28 vs prior 28 movers (checklist P2): biggest sales gains and drops in
+    # money, so a $40 product doubling doesn't outrank a $3,000 one slipping.
+    # Products that sold before but nothing now count as drops too.
+    now_names = {p["name"] for p in products}
+    move_rows = [
+        {"name": p["name"], "category": p["category"], "revenue": p["revenue"], "prior_revenue": p["prior_revenue"],
+         "quantity": p["quantity"], "prior_quantity": (prior.get(p["name"]) or {}).get("quantity", 0)}
+        for p in products
+    ] + [
+        {"name": r["name"], "category": r["category"], "revenue": 0.0, "prior_revenue": r["revenue"],
+         "quantity": 0, "prior_quantity": r["quantity"]}
+        for r in prior_rows if r["name"] not in now_names and r["revenue"]
+    ]
+    for m in move_rows:
+        m["change"] = round(m["revenue"] - m["prior_revenue"], 2)
+        m["change_pct"] = round(m["change"] / m["prior_revenue"] * 100, 1) if m["prior_revenue"] else None
+    min_move = 100.0
+    movers = {
+        "up": sorted((m for m in move_rows if m["change"] >= min_move), key=lambda m: -m["change"])[:6],
+        "down": sorted((m for m in move_rows if m["change"] <= -min_move), key=lambda m: m["change"])[:6],
+    }
+
+    # Refunds per product (checklist P2): Shopify's sales reversals (returns
+    # and refunds) as a share of the product's gross sales in the window.
+    # Shopify books a refund on the day it happens, so this is "refunded in
+    # these 28 days", not "of orders placed in these 28 days".
+    refunds = None
+    if sales_source == "shopify":
+        g_all = sum(p.get("gross_sales", 0.0) for p in products)
+        r_all = sum(abs(p.get("sales_reversals", 0.0)) for p in products)
+        for p in products:
+            g = p.get("gross_sales", 0.0)
+            p["refund_rate"] = round(abs(p.get("sales_reversals", 0.0)) / g * 100, 1) if g > 0 else None
+        min_gross = 300.0
+        rows = [
+            {"name": p["name"], "category": p["category"], "gross_sales": p.get("gross_sales", 0.0),
+             "refunded": round(abs(p.get("sales_reversals", 0.0)), 2), "refund_rate": p["refund_rate"]}
+            for p in products if p.get("gross_sales", 0.0) >= min_gross and p.get("refund_rate")
+        ]
+        refunds = {
+            "store_refund_rate": round(r_all / g_all * 100, 1) if g_all else None,
+            "total_refunded": round(r_all, 2),
+            "min_gross_sales": min_gross,
+            "by_rate": sorted(rows, key=lambda r: -r["refund_rate"])[:10],
+            "by_amount": sorted(rows, key=lambda r: -r["refunded"])[:10],
+        }
+
     return {
         "days": days,
         "window_label": f"{first_day.strftime('%d %b')} - {last_day.strftime('%d %b')} (last {days} complete days)",
@@ -474,4 +521,6 @@ def fetch_product_analytics(db: Session, store: models.Store, days: int = 28) ->
         "products": products,
         "categories": sorted(categories.values(), key=lambda c: c["revenue"], reverse=True),
         "fix_first": fix_first,
+        "movers": movers,
+        "refunds": refunds,
     }
