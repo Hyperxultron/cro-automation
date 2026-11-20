@@ -498,6 +498,8 @@ export const api = {
     request<{ status: string; detail?: string; report_date?: string; subject?: string }>("/dashboard/send-daily-report", { method: "POST" }),
   topProducts: (days = 1, limit = 5) =>
     request<{ days: number; products: TopProduct[] }>(`/dashboard/top-products?days=${days}&limit=${limit}`),
+  topProductsFor: (period: "today" | "yesterday" | "last7", limit = 5) =>
+    request<{ days: number; products: TopProduct[] }>(`/dashboard/top-products?period=${period}&limit=${limit}`),
   ordersTrend: (days = 7) =>
     request<{ days: number; trend: OrdersTrendDay[] }>(`/dashboard/orders-trend?days=${days}`),
   funnel: () => request<Funnel>("/dashboard/funnel"),

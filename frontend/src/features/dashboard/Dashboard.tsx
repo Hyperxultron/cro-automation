@@ -170,6 +170,22 @@ function Dashboard() {
     const [summary, setSummary] = useState<DashboardSummary | null>(null);
     const [trend, setTrend] = useState<CvrDay[]>([]);
     const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+    // Top Selling Products card: its own Today / Yesterday / 7 days switch, always top 5.
+    const [topPeriod, setTopPeriod] = useState<"today" | "yesterday" | "last7">("today");
+    const [topLoading, setTopLoading] = useState(true);
+    useEffect(() => {
+        let alive = true;
+        const load = () =>
+            api.topProductsFor(topPeriod, 5)
+                .then((r) => alive && setTopProducts(r.products))
+                .catch(() => alive && setTopProducts([]))
+                .finally(() => alive && setTopLoading(false));
+        setTopLoading(true);
+        setTopProducts([]);
+        load();
+        const timer = setInterval(load, 5 * 60 * 1000);
+        return () => { alive = false; clearInterval(timer); };
+    }, [topPeriod]);
     const [ordersTrend, setOrdersTrend] = useState<OrdersTrendDay[]>([]);
     const [funnel, setFunnel] = useState<FunnelCompare | null>(null);
     const [orderHealth, setOrderHealth] = useState<OrderHealth | null>(null);
@@ -189,11 +205,10 @@ function Dashboard() {
     const loadData = useCallback(async () => {
         setError(null);
         try {
-            const [s, t, tp, ot, oh, ov, cl, st, sb, ar] = await Promise.all([
+            const [s, t, ot, oh, ov, cl, st, sb, ar] = await Promise.all([
                 api.summary(),
                 // 2x the window: the earlier half is the dashed "previous period" line.
                 api.cvrTrend(periodDays * 2).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
-                api.topProducts(1, 5).catch(() => ({ days: 1, products: [] as TopProduct[] })),
                 api.ordersTrend(7).catch(() => ({ days: 7, trend: [] as OrdersTrendDay[] })),
                 api.orderHealth(30).catch(() => null),
                 api.overview(overviewPeriod, overviewCompare).catch(() => null),
@@ -204,7 +219,6 @@ function Dashboard() {
             ]);
             setSummary(s);
             setTrend(t.days);
-            setTopProducts(tp.products);
             setOrdersTrend(ot.trend);
             setOrderHealth(oh);
             setOverview(ov);
@@ -1263,12 +1277,28 @@ function Dashboard() {
                                     <div className="mb-5 flex items-center justify-between">
                                         <div>
                                             <h3 className="font-bold text-slate-900">Top Selling Products<InfoTip text={HELP.topProducts} /></h3>
-                                            <p className="mt-1 text-xs text-slate-400">Today, by revenue</p>
+                                            <p className="mt-1 text-xs text-slate-400">
+                                                {topPeriod === "today" ? "Today so far" : topPeriod === "yesterday" ? "Yesterday" : "Last 7 days"}, by revenue
+                                            </p>
                                         </div>
-                                        <Package className="text-blue-500" size={20} />
+                                        <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
+                                            {([
+                                                { key: "today", label: "Today" },
+                                                { key: "yesterday", label: "Yesterday" },
+                                                { key: "last7", label: "7 days" },
+                                            ] as const).map((opt) => (
+                                                <button
+                                                    key={opt.key}
+                                                    onClick={() => setTopPeriod(opt.key)}
+                                                    className={`whitespace-nowrap rounded-md px-2 py-1 font-medium ${topPeriod === opt.key ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+                                                >
+                                                    {opt.label}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                     {topProducts.length === 0 ? (
-                                        <p className="text-xs text-slate-400">{loading ? "Loading…" : "No orders yet today."}</p>
+                                        <p className="text-xs text-slate-400">{topLoading ? "Loading…" : "No orders yet in this period."}</p>
                                     ) : (
                                         <div className="space-y-4">
                                             {topProducts.map((p, i) => (

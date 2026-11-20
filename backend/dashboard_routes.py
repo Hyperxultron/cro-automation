@@ -232,10 +232,20 @@ def dashboard_alerts(
 def top_products(
     days: int = Query(1, ge=1, le=90),
     limit: int = Query(5, ge=1, le=20),
+    period: str | None = Query(None, pattern="^(today|yesterday|last7)$"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     store = _get_store(db, shop)
+    if period == "today":
+        ensure_fresh_orders(db, store)
+    if period == "yesterday":
+        start, end = _local_day_range_utc(store, 1)
+        return {"days": 1, "period": period, "products": _top_products(db, store, start, end, limit)}
+    if period == "last7":
+        start, _ = _local_day_range_utc(store, 7)
+        _, end = _local_day_range_utc(store, 1)
+        return {"days": 7, "period": period, "products": _top_products(db, store, start, end, limit)}
     if days == 1:
         start, end = _local_day_range_utc(store, 0)
     else:
