@@ -36,6 +36,7 @@ from overview import fetch_overview
 from shopify_sync import ensure_fresh_orders
 from sales import fetch_sales_trend, fetch_sales_breakdown
 from segments import fetch_segment_split
+from deeper import fetch_deeper
 from experiments import METRICS as EXPERIMENT_METRICS, delete_experiment, list_experiments, save_experiment
 from change_log import list_change_log, create_change_log_entry, delete_change_log_entry, VALID_AREAS
 from shopify_sync import sync_store
@@ -877,3 +878,22 @@ def remove_experiment(exp_id: int, shop: str | None = Query(None), db: Session =
     if not delete_experiment(db, store, exp_id):
         raise HTTPException(status_code=404, detail="Experiment not found")
     return {"deleted": exp_id}
+
+
+# ---------------------------------------------------------------------------
+# Deeper analyses (manager checklist, section 9): price bands, discount codes,
+# bought-together pairs. Read-only from Shopify, cached 30 min.
+# ---------------------------------------------------------------------------
+
+@router.get("/deeper")
+def deeper(
+    days: int = Query(30, ge=7, le=60),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    store = _get_store(db, shop)
+    try:
+        return fetch_deeper(db, store, days=days)
+    except Exception as exc:
+        logger.exception("Deeper analyses failed")
+        raise HTTPException(status_code=502, detail=f"Shopify error: {str(exc)[:300]}")

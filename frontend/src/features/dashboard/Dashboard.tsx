@@ -12,6 +12,7 @@ import StoreIntegration from "../store/StoreIntegration";
 import { BuyHeatmapCard, SalesOverTimeChart, TrafficSourcesCard } from "./OceanCharts";
 import CroRecommendations from "../recommendations/CroRecommendations";
 import Experiments, { type ExperimentPrefill } from "../experiments/Experiments";
+import DeeperAnalyses from "../analytics/DeeperAnalyses";
 import ConversionAnalytics from "../analytics/ConversionAnalytics";
 import ProductAnalytics from "../analytics/ProductAnalytics";
 import LandingPages from "../analytics/LandingPages";
@@ -24,7 +25,7 @@ import ComingSoon from "../misc/ComingSoon";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
     Bell, Moon, Sun, Clock3, DollarSign, FileText, FlaskConical, Gauge, Globe, History, IndianRupee, LayoutDashboard,
-    Lightbulb, Menu, Package, RefreshCw, Route, Settings, ShieldCheck,
+    Lightbulb, Menu, Microscope, Package, RefreshCw, Route, Settings, ShieldCheck,
     ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
 import {
@@ -420,6 +421,7 @@ function Dashboard() {
                 { name: "Landing Pages", icon: Route },
                 { name: "Cart & Checkout", icon: ShoppingCart },
                 { name: "Site Health", icon: Gauge },
+                { name: "Deeper Analyses", icon: Microscope },
             ],
         },
         {
@@ -589,6 +591,11 @@ function Dashboard() {
                                         setActiveNav("Experiments");
                                     }}
                                 />
+                            </div>
+                        )}
+                        {activeNav === "Deeper Analyses" && (
+                            <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
+                                <DeeperAnalyses />
                             </div>
                         )}
                         {activeNav === "Experiments" && (

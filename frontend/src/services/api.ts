@@ -186,6 +186,41 @@ export type Recommendation = {
   status_updated_at: string | null;
 };
 
+export type DiscountStats = {
+  orders: number;
+  net_sales: number;
+  aov: number | null;
+  discount_given: number;
+  avg_discount: number | null;
+  discount_pct: number | null;
+  share_of_orders: number | null;
+};
+
+export type DeeperData = {
+  days: number;
+  window_label: string;
+  errors: Record<string, string>;
+  price_bands: {
+    rows: { band: string; from: number; products: number; orders: number; items: number; net_sales: number; share_of_sales: number | null; views: number | null; conversion_rate: number | null }[];
+    conversion_available: boolean;
+    views_window_label: string | null;
+    sales_source: string | null;
+  } | null;
+  discounts: {
+    total_orders: number;
+    with_code: DiscountStats;
+    without_code: DiscountStats;
+    codes: (DiscountStats & { code: string })[];
+    code_count: number;
+  } | null;
+  bought_together: {
+    rows: { a: string; b: string; orders_together: number; a_orders: number; b_orders: number; pct_of_a: number | null; pct_of_b: number | null; lift: number | null }[];
+    orders: number;
+    multi_product_orders: number;
+    multi_share: number | null;
+  } | null;
+};
+
 export type ExperimentMetric = "conversion_rate" | "added_to_cart_rate" | "bounce_rate" | "aov";
 
 export type ExperimentResult = {
@@ -652,6 +687,7 @@ export const api = {
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),
   recommendations: (range: RecRange = 30) =>
     request<Recommendations>(`/dashboard/recommendations?${range === "yesterday" ? "period=yesterday" : `days=${range}`}`),
+  deeper: (days: 7 | 30 | 60) => request<DeeperData>(`/dashboard/deeper?days=${days}`),
   experiments: () =>
     request<{ metrics: { key: ExperimentMetric; label: string; unit: string; better: "up" | "down" }[]; experiments: Experiment[] }>(
       "/dashboard/experiments",
