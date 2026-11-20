@@ -509,7 +509,7 @@ function Dashboard() {
                 </aside>
 
                 <main className="min-w-0 flex-1">
-                    <header className="ocean-bg flex h-20 items-center justify-between border-b border-slate-200 px-5 sm:px-8">
+                    <header className="ocean-bg sticky top-0 z-30 flex h-20 items-center justify-between border-b border-slate-200 px-5 sm:px-8">
                         <div className="flex items-center gap-3">
                             <button className="lg:hidden" onClick={() => setMobileMenu(true)}>
                                 <Menu size={23} />
@@ -635,12 +635,10 @@ function Dashboard() {
 
                             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                                 <div>
-                                    <p className="text-sm text-slate-500">Welcome to your monitoring workspace</p>
-                                    <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">CRO Performance Overview</h1>
+                                    <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">CRO Performance Overview</h1>
                                     <p className="mt-2 text-sm text-slate-500">
-                                        Monitor your store performance and automated alerts.
                                         {summary?.store.timezone && (
-                                            <span className="ml-2 inline-flex items-center gap-1 text-slate-400">
+                                            <span className="inline-flex items-center gap-1 text-slate-400">
                                                 <Clock3 size={12} /> Store time: {summary.store.timezone}
                                             </span>
                                         )}
@@ -654,7 +652,7 @@ function Dashboard() {
 
                             {/* Period controls + comparison picker (checklist section 2, P1).
                                 Yesterday (a complete day) is the default; Today is an explicit toggle. */}
-                            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
+                            <div className="sticky top-20 z-20 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-md">
                                 <span className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Period</span>
                                 <div className="flex rounded-xl bg-slate-100 p-1">
                                     {([
