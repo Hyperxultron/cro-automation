@@ -8,7 +8,7 @@ Har SYNC_INTERVAL_MINUTES (default 15) minute mein:
      comparisons ke liye purana data DB mein hota hi nahi aur baseline 0
      dikhta hai)
   2. Quilt alarm check
-  3. CVR alarm check
+  3. CVR alarm check + baaki smart alerts (smart_alerts.py)
   4. Microsoft Clarity product views (din mein ek baar, CLARITY_API_TOKEN ho tab)
 
 .env settings (optional):
@@ -27,6 +27,7 @@ from daily_report import maybe_send_daily_report
 from database import SessionLocal
 from quilt_alarm import check_quilt_alarm
 from shopify_sync import sync_store
+from smart_alerts import run_smart_alerts
 import models
 
 logger = logging.getLogger("scheduler")
@@ -70,6 +71,12 @@ def run_once() -> dict:
             logger.exception("CVR alarm failed")
             cvr = {"status": "error", "detail": str(exc)[:300]}
         try:
+            smart = run_smart_alerts(db, store)
+        except Exception as exc:
+            db.rollback()
+            logger.exception("Smart alerts failed")
+            smart = {"status": "error", "detail": str(exc)[:300]}
+        try:
             # Product page views - once a day, skipped without CLARITY_API_TOKEN.
             clarity = sync_clarity(db, store)
         except Exception as exc:
@@ -93,6 +100,7 @@ def run_once() -> dict:
             "orders": result["orders"],
             "quilt_alarm": quilt.get("status"),
             "cvr_alarm": cvr.get("status"),
+            "smart_alerts": smart,
             "clarity": clarity.get("status"),
         }
         logger.info("Scheduler run: %s", last_run)

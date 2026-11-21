@@ -595,7 +595,7 @@ function Dashboard() {
                     <>
                         {activeNav === "Alarm Rules" && (
                             <div className="mx-auto max-w-[1500px] p-5 sm:p-8">
-                                <AlarmRules />
+                                <AlarmRules onOpen={(page) => setActiveNav(page)} />
                             </div>
                         )}
                         {activeNav === "Alert History" && (

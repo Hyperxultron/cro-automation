@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { Clock3, Mail, RefreshCw, ShoppingBag, TrendingDown } from "lucide-react";
+import { ArrowUpRight, Clock3, Gauge, Mail, PackageX, RefreshCw, ShoppingBag, ShoppingCart, TrendingDown, Users } from "lucide-react";
 import { api, timeAgo, type AlarmRuleItem } from "../../services/api";
 
-const iconFor = (title: string) => (title.toLowerCase().includes("quilt") ? ShoppingBag : TrendingDown);
+const iconFor = (title: string) => {
+  const t = title.toLowerCase();
+  if (t.includes("quilt") || t.includes("no orders")) return ShoppingBag;
+  if (t.includes("cart") || t.includes("checkout")) return ShoppingCart;
+  if (t.includes("traffic")) return Users;
+  if (t.includes("speed")) return Gauge;
+  if (t.includes("stock")) return PackageX;
+  return TrendingDown;
+};
 
 type Tone = "ok" | "alert" | "muted";
 const statusLabel: Record<string, { text: string; tone: Tone }> = {
@@ -13,6 +21,8 @@ const statusLabel: Record<string, { text: string; tone: Tone }> = {
   no_quilt_products: { text: "No quilt products mapped", tone: "muted" },
   no_active_rule: { text: "Paused", tone: "muted" },
   insufficient_data: { text: "Not enough data", tone: "muted" },
+  outside_hours: { text: "Off hours", tone: "muted" },
+  within_normal_swing: { text: "Within normal swing", tone: "ok" },
   rule_inactive: { text: "Paused", tone: "muted" },
   error: { text: "Check failed", tone: "muted" },
 };
@@ -24,13 +34,14 @@ const pill: Record<Tone, string> = {
 };
 
 const thresholdText = (rule: AlarmRuleItem) => {
+  if (rule.limit_text) return rule.limit_text;
   if (rule.threshold == null) return null;
   return rule.title.toLowerCase().includes("quilt")
     ? `Limit: ${rule.threshold}h without a quilt order`
     : `Limit: ${rule.threshold}% below average`;
 };
 
-function AlarmRules() {
+function AlarmRules({ onOpen }: { onOpen?: (page: string) => void }) {
   const [rules, setRules] = useState<AlarmRuleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +171,16 @@ function AlarmRules() {
                   Last alert {rule.last_triggered_at ? timeAgo(rule.last_triggered_at) : "never"}
                 </span>
                 {limit && <span className="text-slate-500">{limit}</span>}
+                {rule.page && onOpen && (
+                  <button
+                    type="button"
+                    onClick={() => onOpen(rule.page!)}
+                    className="ml-auto inline-flex items-center gap-1 font-semibold text-teal-700 hover:text-teal-900"
+                  >
+                    Open {rule.page}
+                    <ArrowUpRight size={15} />
+                  </button>
+                )}
               </div>
             </div>
           );

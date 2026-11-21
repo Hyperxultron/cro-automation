@@ -142,14 +142,15 @@ def cvr_comparison(daily: list[dict], store: models.Store) -> dict:
 MIN_ALARM_SESSIONS = 30  # isse kam sessions wale din par CVR bharosemand nahi
 
 
-def cvr_vs_weekday_average(daily: list[dict], store: models.Store, weeks: int = 4) -> dict:
+def cvr_vs_weekday_average(daily: list[dict], store: models.Store, weeks: int = 4, target: date | None = None) -> dict:
     """
     Kal ka CVR vs pichhle `weeks` hafton ke ussi weekday ka average CVR.
     (e.g. kal Tuesday tha -> pichhle 4 Tuesdays ka average)
     Drop % = (avg - kal) / avg * 100. Kam data ho toh drop None.
+    `target` se kisi aur din ko bhi isi tarah jaancha ja sakta hai.
     """
     by_date = {r["date"]: r for r in daily}
-    yesterday = store_today(store) - timedelta(days=1)
+    yesterday = target or (store_today(store) - timedelta(days=1))
     y_row = by_date.get(yesterday.isoformat(), {})
     y_cvr, y_sessions = y_row.get("cvr"), y_row.get("sessions") or 0
 
@@ -182,3 +183,19 @@ def cvr_vs_weekday_average(daily: list[dict], store: models.Store, weeks: int = 
         "drop_percent": drop,
         "reason": reason,
     }
+
+
+def cvr_normal_swing(daily: list[dict], store: models.Store, days: int = 28) -> dict:
+    """
+    "Normal daily swing": har pichhle din (kal se pehle ke `days` din) ka CVR
+    uske apne 4-week same-weekday average se kitna % alag tha - un sab ka
+    average (absolute). Manager: alert tabhi jab gir 2x normal swing se zyada.
+    """
+    yesterday = store_today(store) - timedelta(days=1)
+    devs = []
+    for i in range(1, days + 1):
+        c = cvr_vs_weekday_average(daily, store, target=yesterday - timedelta(days=i))
+        if c["drop_percent"] is not None:
+            devs.append(abs(c["drop_percent"]))
+    swing = round(sum(devs) / len(devs), 1) if len(devs) >= 7 else None
+    return {"swing_percent": swing, "swing_days": len(devs)}

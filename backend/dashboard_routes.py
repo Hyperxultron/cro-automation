@@ -25,6 +25,7 @@ from cvr_alarm import check_cvr_alarm, CVR_RULE_TITLES, get_or_create_cvr_rule
 from dependencies import get_db
 from funnel import fetch_funnel, fetch_funnel_compare, fetch_funnel_trend
 from quilt_alarm import check_quilt_alarm, RULE_TITLE as QUILT_RULE_TITLE
+import smart_alerts
 from recommendations import build_recommendations, set_status as set_recommendation_status, STATUSES as REC_STATUSES
 from benchmarks import get_benchmarks
 from order_health import fetch_order_health
@@ -322,6 +323,12 @@ def dashboard_sync(
     except Exception as exc:
         logger.exception("CVR alarm failed")
         alarms["cvr"] = {"status": "error", "detail": str(exc)[:300]}
+    try:
+        alarms["smart"] = smart_alerts.run_smart_alerts(db, store)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Smart alerts failed")
+        alarms["smart"] = {"status": "error", "detail": str(exc)[:300]}
 
     return {**result, "alarms": alarms}
 
@@ -334,6 +341,7 @@ def dashboard_sync(
 def list_alarm_rules(shop: str | None = Query(None), db: Session = Depends(get_db)):
     store = _get_store(db, shop)
     get_or_create_cvr_rule(db)  # purana CVR rule naye naam/description mein badal jaata hai
+    smart_alerts.ensure_rules(db)  # manager checklist ke baaki alerts
     rules = db.query(models.AlarmRule).order_by(models.AlarmRule.id.asc()).all()
 
     out = []
@@ -358,6 +366,10 @@ def list_alarm_rules(shop: str | None = Query(None), db: Session = Depends(get_d
                     res = check_cvr_alarm(db, store)
                     live_status = res.get("status")
                     live_detail = _cvr_detail(res)
+                elif rule.title in smart_alerts.RULES_BY_TITLE:
+                    res = smart_alerts.evaluate(db, store, rule)
+                    live_status = smart_alerts.live_status(res)
+                    live_detail = res.get("detail")
             except Exception:
                 logger.exception("Live status check failed for rule %s", rule.id)
                 live_status = "error"
@@ -373,9 +385,31 @@ def list_alarm_rules(shop: str | None = Query(None), db: Session = Depends(get_d
                 "last_triggered_at": last_triggered.isoformat() if last_triggered else None,
                 "live_status": live_status,
                 "live_detail": live_detail,
+                "limit_text": _limit_text(rule),
+                "page": _rule_page(rule),
             }
         )
     return out
+
+
+def _limit_text(rule: models.AlarmRule) -> str | None:
+    if rule.title in smart_alerts.RULES_BY_TITLE:
+        return smart_alerts.limit_text(rule)
+    if rule.threshold is None:
+        return None
+    if rule.title == QUILT_RULE_TITLE:
+        return f"Limit: {rule.threshold:g}h without a quilt order"
+    return f"Limit: {rule.threshold:g}% below average"
+
+
+def _rule_page(rule: models.AlarmRule) -> str | None:
+    if rule.title in smart_alerts.RULES_BY_TITLE:
+        return smart_alerts.RULES_BY_TITLE[rule.title]["page"]
+    if rule.title in CVR_RULE_TITLES:
+        return "Conversion Analytics"
+    if rule.title == QUILT_RULE_TITLE:
+        return "Product Analytics"
+    return None
 
 
 def _quilt_detail(res: dict) -> str | None:
@@ -397,10 +431,16 @@ def _cvr_detail(res: dict) -> str | None:
     if drop is None:
         return None
     direction = f"{abs(drop):g}% below" if drop > 0 else f"{abs(drop):g}% above"
-    return (
+    text = (
         f"Yesterday ({day}) {res.get('yesterday_cvr')}% vs {day} 4-week avg "
-        f"{res.get('baseline_cvr')}%: {direction}. Alerts at {res.get('threshold_percent'):g}% below."
+        f"{res.get('baseline_cvr')}%: {direction}."
     )
+    swing = res.get("swing_percent")
+    if swing is not None:
+        text += f" A normal day moves about {swing:g}% either way."
+    if res.get("status") == "within_normal_swing":
+        text += " Below the limit, but within twice the normal swing and only 1 day, so no alert yet."
+    return text
 
 
 class AlarmRulePatch(BaseModel):
