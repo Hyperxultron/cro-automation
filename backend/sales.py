@@ -30,7 +30,7 @@ breakdown Shopify doesn't actually give us per-field.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone as dt_tz
+from datetime import date, datetime, timedelta, timezone as dt_tz
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -144,7 +144,7 @@ def fetch_sales_trend(db: Session, store: models.Store, days: int = 14, include_
     }
 
 
-def fetch_sales_breakdown(db: Session, store: models.Store, period: str = "yesterday", compare: str = "4week_avg") -> dict:
+def fetch_sales_breakdown(db: Session, store: models.Store, period: str = "yesterday", compare: str = "4week_avg", day: date | None = None) -> dict:
     """
     period: "yesterday" | "today" | "last7" - same meaning as /dashboard/overview.
     compare: "4week_avg" | "last_week" - ignored for period="last7" (always prior 7 days).
@@ -153,6 +153,13 @@ def fetch_sales_breakdown(db: Session, store: models.Store, period: str = "yeste
     now_local = datetime.now(tz)
     today_date = now_local.date()
     yesterday_date = today_date - timedelta(days=1)
+    if day is not None:  # calendar pick - same rules as /dashboard/overview
+        if day >= today_date:
+            period, day = "today", None
+        elif day == yesterday_date:
+            period, day = "yesterday", None
+        else:
+            period = "yesterday"
 
     if period == "today":
         target_date = today_date
@@ -166,9 +173,9 @@ def fetch_sales_breakdown(db: Session, store: models.Store, period: str = "yeste
         period_label = f"Last 7 days ({(target_date - timedelta(days=6)).strftime('%d %b')} - {target_date.strftime('%d %b')})"
     else:
         period = "yesterday"
-        target_date = yesterday_date
+        target_date = day or yesterday_date
         start, end = _day_bounds_utc(target_date, tz)
-        period_label = f"Yesterday ({target_date.strftime('%a %d %b')})"
+        period_label = target_date.strftime('%a %d %b %Y') if day else f"Yesterday ({target_date.strftime('%a %d %b')})"
 
     current = _sales_stats(db, store, start, end)
     history_start = history_start_date(db, store)

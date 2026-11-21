@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
     api, formatMoney, timeAgo,
     type AlarmRuleItem, type ChangeLogEntry, type CvrDay, type DashboardSummary, type FunnelCompare, type OrderHealth, type OrderHealthRange, type Overview, type OrdersTrendDay, type SalesBreakdown, type SalesTrend, type TopProduct, type DeviceFunnel, type KpiRange, type KpiTotals
@@ -27,7 +27,7 @@ import { BRAND, Logo } from "../../brand";
 import { auth, isAuthEnabled } from "../../services/api";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
-    Bell, ChevronDown, Moon, Sun, Clock3, DollarSign, FileText, FlaskConical, Gauge, Globe, History, IndianRupee, LayoutDashboard,
+    Bell, CalendarDays, ChevronDown, Moon, Sun, Clock3, DollarSign, FileText, FlaskConical, Gauge, Globe, History, IndianRupee, LayoutDashboard,
     Lightbulb, LogOut, Menu, Microscope, Package, RefreshCw, Route, Settings, ShieldCheck,
     ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
@@ -122,6 +122,13 @@ function DeviceFunnelBars({ data, device, error }: { data: DeviceFunnel | null; 
 }
 
 // Logo A from the approved Ocean Pro preview (funnel + rising arrow).
+// YYYY-MM-DD for today + n days (browser's local date; backend clamps to store time).
+const dateOffset = (n: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 function Dashboard() {
     // Light / dark (Ocean Pro). Saved per browser; index.html applies it before paint.
     const [theme, setTheme] = useState<"light" | "dark">(() =>
@@ -145,7 +152,10 @@ function Dashboard() {
     // "Period controls: Yesterday / Last 7 vs prior 7 / Today so far, plus a
     // comparison picker" (checklist section 2, P1). Defaults to "yesterday" -
     // a complete day - not "today", per section 1's first fix-first item.
-    const [overviewPeriod, setOverviewPeriod] = useState<"yesterday" | "today" | "last7">("yesterday");
+    const [overviewPeriod, setOverviewPeriod] = useState<"yesterday" | "today" | "last7" | "date">("yesterday");
+    // Calendar pick (period "date"): one store day, YYYY-MM-DD.
+    const [pickedDate, setPickedDate] = useState<string>("");
+    const dateInputRef = useRef<HTMLInputElement>(null);
     const [overviewCompare, setOverviewCompare] = useState<"4week_avg" | "last_week">("4week_avg");
     const [overview, setOverview] = useState<Overview | null>(null);
 
@@ -223,10 +233,10 @@ function Dashboard() {
                 // 2x the window: the earlier half is the dashed "previous period" line.
                 api.cvrTrend(periodDays * 2).catch(() => ({ store_id: 0, days: [] as CvrDay[] })),
                 api.ordersTrend(7).catch(() => ({ days: 7, trend: [] as OrdersTrendDay[] })),
-                api.overview(overviewPeriod, overviewCompare).catch(() => null),
+                api.overview(overviewPeriod, overviewCompare, pickedDate).catch(() => null),
                 api.changeLog(Math.max(periodDays, 28)).catch(() => ({ days: 0, valid_areas: [], entries: [] as ChangeLogEntry[] })),
                 api.salesTrend(salesDays).catch(() => null),
-                api.salesBreakdown(overviewPeriod, overviewCompare).catch(() => null),
+                api.salesBreakdown(overviewPeriod, overviewCompare, pickedDate).catch(() => null),
                 api.alarmRules().catch(() => [] as AlarmRuleItem[]),
                 api.kpiTotals().catch(() => null),
             ]);
@@ -244,7 +254,7 @@ function Dashboard() {
         } finally {
             setLoading(false);
         }
-    }, [periodDays, overviewPeriod, overviewCompare, salesDays]);
+    }, [periodDays, overviewPeriod, overviewCompare, salesDays, pickedDate]);
 
     // Conversion Funnel card has its own Today / Yesterday / Last 7 switch; it
     // follows the Overview period picker when that changes.
@@ -264,7 +274,7 @@ function Dashboard() {
             .catch(() => alive && setDeviceFunnelErr(true));
         return () => { alive = false; };
     }, [funnelDevice, funnelPeriod]);
-    useEffect(() => setFunnelPeriod(overviewPeriod), [overviewPeriod]);
+    useEffect(() => setFunnelPeriod(overviewPeriod === "date" ? "yesterday" : overviewPeriod), [overviewPeriod]);
     useEffect(() => {
         let alive = true;
         const load = () =>
@@ -705,6 +715,37 @@ function Dashboard() {
                                             {opt.label}
                                         </button>
                                     ))}
+                                </div>
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const el = dateInputRef.current;
+                                            if (!el) return;
+                                            try { el.showPicker(); } catch { el.focus(); el.click(); }
+                                        }}
+                                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${overviewPeriod === "date" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                                    >
+                                        <CalendarDays size={15} />
+                                        {overviewPeriod === "date" && pickedDate
+                                            ? new Date(`${pickedDate}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })
+                                            : "Pick a date"}
+                                    </button>
+                                    <input
+                                        ref={dateInputRef}
+                                        type="date"
+                                        aria-label="Pick a date"
+                                        tabIndex={-1}
+                                        value={pickedDate}
+                                        min={dateOffset(-365)}
+                                        max={dateOffset(0)}
+                                        onChange={(e) => {
+                                            if (!e.target.value) return;
+                                            setPickedDate(e.target.value);
+                                            setOverviewPeriod("date");
+                                        }}
+                                        className="pointer-events-none absolute bottom-0 left-0 h-px w-px opacity-0"
+                                    />
                                 </div>
                                 {overviewPeriod !== "last7" && (
                                     <>
@@ -1251,17 +1292,21 @@ function Dashboard() {
 
                             {/* "Overview stays small" (checklist section 10): the main cards stay on
                                 top; supporting detail opens on demand and only loads when opened. */}
-                            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60">
+                            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                                 <button
                                     type="button"
                                     onClick={() => setShowMore((v) => !v)}
-                                    className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+                                    aria-expanded={showMore}
+                                    className="group flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
                                 >
-                                    <span>
-                                        <span className="block font-bold text-slate-900">More details</span>
-                                        <span className="block text-xs text-slate-500">Daily total sales · AOV, sessions and sales by channel · Order health · Orders last 7 days · Traffic sources · When people buy</span>
+                                    <span className="min-w-0">
+                                        <span className="block text-[15px] font-bold text-slate-900">More details</span>
+                                        <span className="mt-1 block text-[13px] leading-5 text-slate-600">Daily total sales · AOV, sessions and sales by channel · Order health · Orders last 7 days · Traffic sources · When people buy</span>
                                     </span>
-                                    <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${showMore ? "rotate-180" : ""}`} />
+                                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-teal-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition group-hover:bg-teal-700">
+                                        {showMore ? "Hide" : "Show"}
+                                        <ChevronDown size={15} className={`transition ${showMore ? "rotate-180" : ""}`} />
+                                    </span>
                                 </button>
                             </div>
                             {showMore && (

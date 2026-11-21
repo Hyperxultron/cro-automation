@@ -727,17 +727,32 @@ def order_health(
 # "too early to compare" instead of printing a noisy %.
 # ---------------------------------------------------------------------------
 
+def _picked_day(value: str | None):
+    """Calendar date (YYYY-MM-DD) from the Overview period bar, last 365 days only."""
+    if not value:
+        return None
+    from datetime import date as _date
+    try:
+        d = _date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Date must be YYYY-MM-DD")
+    if d < _date.today() - timedelta(days=366):
+        raise HTTPException(status_code=400, detail="Pick a date within the last 12 months")
+    return d
+
+
 @router.get("/overview")
 def overview(
     period: str = Query("yesterday", pattern="^(yesterday|today|last7)$"),
     compare: str = Query("4week_avg", pattern="^(4week_avg|last_week)$"),
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     store = _get_store(db, shop)
     # Pull the latest orders first if our copy is stale (backend was asleep).
     ensure_fresh_orders(db, store)
-    return fetch_overview(db, store, period=period, compare=compare)
+    return fetch_overview(db, store, period=period, compare=compare, day=_picked_day(date))
 
 
 # ---------------------------------------------------------------------------
@@ -804,11 +819,12 @@ def buy_heatmap(
 def sales_breakdown(
     period: str = Query("yesterday", pattern="^(yesterday|today|last7)$"),
     compare: str = Query("4week_avg", pattern="^(4week_avg|last_week)$"),
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     store = _get_store(db, shop)
-    return fetch_sales_breakdown(db, store, period=period, compare=compare)
+    return fetch_sales_breakdown(db, store, period=period, compare=compare, day=_picked_day(date))
 
 
 # ---------------------------------------------------------------------------

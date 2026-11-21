@@ -360,7 +360,8 @@ export type MobileSpeed = {
 };
 
 export type Overview = {
-  period: "yesterday" | "today" | "last7";
+  period: "yesterday" | "today" | "last7" | "date";
+  date?: string;
   period_label: string;
   compare: "4week_avg" | "last_week";
   history_start: string | null;
@@ -891,12 +892,13 @@ export const api = {
   benchmarks: () => request<Benchmarks>("/dashboard/benchmarks"),
   orderHealth: (range: OrderHealthRange = 30) =>
     request<OrderHealth>(`/dashboard/order-health?${typeof range === "number" ? `days=${range}` : `period=${range}`}`),
-  overview: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
-    request<Overview>(`/dashboard/overview?period=${period}&compare=${compare}`),
+  // period "date" = one day picked on the calendar (YYYY-MM-DD in `date`).
+  overview: (period: "yesterday" | "today" | "last7" | "date" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg", date?: string) =>
+    request<Overview>(`/dashboard/overview?period=${period === "date" ? "yesterday" : period}&compare=${compare}${period === "date" && date ? `&date=${date}` : ""}`),
   salesTrend: (days = 14, includeToday = false) =>
     request<SalesTrend>(`/dashboard/sales-trend?days=${days}${includeToday ? "&include_today=true" : ""}`),
-  salesBreakdown: (period: "yesterday" | "today" | "last7" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg") =>
-    request<SalesBreakdown>(`/dashboard/sales-breakdown?period=${period}&compare=${compare}`),
+  salesBreakdown: (period: "yesterday" | "today" | "last7" | "date" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg", date?: string) =>
+    request<SalesBreakdown>(`/dashboard/sales-breakdown?period=${period === "date" ? "yesterday" : period}&compare=${compare}${period === "date" && date ? `&date=${date}` : ""}`),
   funnelDevices: (period: "today" | "yesterday" | "last7") =>
     request<DeviceFunnel>(`/dashboard/funnel-devices?period=${period}`),
   kpiTotals: () => request<KpiTotals>("/dashboard/kpi-totals"),

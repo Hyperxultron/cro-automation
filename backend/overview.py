@@ -18,7 +18,7 @@ the alarm cards), it only powers the new /dashboard/overview endpoint.
 """
 
 import logging
-from datetime import datetime, timedelta, time as dtime, timezone as dt_tz
+from datetime import date, datetime, timedelta, time as dtime, timezone as dt_tz
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
@@ -125,9 +125,12 @@ def fetch_overview(
     store: models.Store,
     period: str = "yesterday",
     compare: str = "4week_avg",
+    day: date | None = None,
 ) -> dict:
     """
     period: "yesterday" | "today" | "last7"
+    day: a single past date picked on the calendar (period is then ignored;
+         it works like "yesterday" for that date, same comparison options)
     compare: "4week_avg" | "last_week" (ignored for period="last7", which always
              compares to the prior 7-day window - that's what "Last 7 vs prior 7" means)
     """
@@ -137,6 +140,13 @@ def fetch_overview(
     yesterday_date = today_date - timedelta(days=1)
 
     warnings: list[str] = []
+    if day is not None:
+        if day >= today_date:
+            period, day = "today", None
+        elif day == yesterday_date:
+            period, day = "yesterday", None
+        else:
+            period = "yesterday"
 
     # ---- 1. Figure out the window + comparison window ----------------------
     if period == "today":
@@ -154,13 +164,18 @@ def fetch_overview(
         period_label = f"Last 7 days ({(target_date - timedelta(days=6)).strftime('%d %b')} - {target_date.strftime('%d %b')})"
     else:  # "yesterday" - the default
         period = "yesterday"
-        target_date = yesterday_date
+        target_date = day or yesterday_date
         start, end = _day_bounds_utc(target_date, tz)
         is_partial = False
-        period_label = f"Yesterday ({target_date.strftime('%a %d %b')}, complete day)"
+        period_label = (
+            f"{target_date.strftime('%a %d %b %Y')} (complete day)" if day
+            else f"Yesterday ({target_date.strftime('%a %d %b')}, complete day)"
+        )
 
     current = _order_stats(db, store, start, end)
     history_start = history_start_date(db, store)
+    if day and not _has_history(history_start, target_date):
+        warnings.append("This date is before our copied order history, so Orders and AOV may show as 0 here. Revenue and conversion still come from Shopify.")
     empty_baseline = {"orders": None, "revenue": None, "aov": None}
 
     # ---- 2. Baseline window(s) ----------------------------------------------
@@ -264,7 +279,8 @@ def fetch_overview(
                 sessions_baseline = prev["sessions"]
             cvr_too_early = (cvr_sessions or 0) < MIN_SESSIONS_FOR_COMPARISON
             raise _Done()
-        daily = fetch_daily_cvr(db, store, days=35)
+        # 35 days covers yesterday + its 4 weeks back; an older picked date needs more.
+        daily = fetch_daily_cvr(db, store, days=max(35, (yesterday_date - target_date).days + 35))
         by_date = {r["date"]: r for r in daily}
         target_row = by_date.get(target_date.isoformat())
         if target_row:
@@ -359,7 +375,8 @@ def fetch_overview(
     }
 
     return {
-        "period": period,
+        "period": "date" if day else period,
+        "date": target_date.isoformat(),
         "period_label": period_label,
         "compare": compare,
         "history_start": history_start.isoformat() if history_start else None,
