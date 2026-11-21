@@ -5,6 +5,7 @@ import { api, formatMoney, type CartCompare, type CartExtras as CartExtrasData, 
 import RangePicker, { rangeLabel } from "../../components/RangePicker";
 import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
+import { countBothFromValues, ptsBothFromValues } from "../../lib/change";
 
 // Cart and checkout extras (manager checklist, section 6, P2/P3).
 
@@ -58,11 +59,11 @@ function Delta({ cur, prev, kind, better = "up", className = "" }: {
   let text: string;
   if (kind === "pts") {
     diff = Math.round((cur - prev) * 10) / 10;
-    text = `${diff > 0 ? "+" : ""}${diff} pts`;
+    text = ptsBothFromValues(cur, prev) ?? "";
   } else {
     if (prev === 0) return null;
     diff = Math.round(((cur - prev) / prev) * 1000) / 10;
-    text = `${diff > 0 ? "+" : ""}${diff}%`;
+    text = countBothFromValues(cur, prev) ?? "";
   }
   const arrow = diff > 0 ? "▲" : diff < 0 ? "▼" : "";
   const good = diff === 0 || better === null ? null : (diff > 0) === (better === "up");

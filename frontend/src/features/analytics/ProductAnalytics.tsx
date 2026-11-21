@@ -5,6 +5,7 @@ import { api, formatMoney, type DashboardSummary, type ProductAnalyticsData, typ
 import InfoTip from "../../components/InfoTip";
 import ProductMoversRefunds from "./ProductMoversRefunds";
 import { HELP } from "../../components/helpText";
+import { pctBoth, ptsBoth } from "../../lib/change";
 
 // Product and category analytics (manager checklist, section 4).
 
@@ -18,14 +19,14 @@ const GROUPS: Record<ProductGroup, { label: string; action: string; badge: strin
 type SortKey = "revenue" | "orders" | "views" | "adjusted_rate" | "revenue_left_on_table" | "name";
 
 const pctText = (v: number | null | undefined) => (v == null ? "—" : `${v}%`);
-const changeText = (v: number | null | undefined, isNew?: boolean, prior?: number) =>
+const changeText = (v: number | null | undefined, isNew?: boolean, prior?: number, cur?: number, currency?: string | null) =>
   isNew ? (
     <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700" title={`Sold very little before (${prior != null ? "$" + Math.round(prior).toLocaleString() : "—"}), so a % change isn't meaningful`}>
       New / low before
     </span>
   ) : v == null ? <span className="text-slate-400">—</span> : (
     <span className={v === 0 ? "text-slate-500" : v > 0 ? "text-emerald-600" : "text-red-600"}>
-      {v > 0 ? "+" : ""}{v}%
+      {pctBoth(v, cur, (a) => formatMoney(a, currency))}
     </span>
   );
 
@@ -201,7 +202,7 @@ function ProductAnalytics() {
                     <td className="py-2.5 pr-4 text-right text-slate-600">{c.items.toLocaleString()}</td>
                     <td className="py-2.5 pr-4 text-right text-slate-600">{c.orders ? c.orders.toLocaleString() : "—"}</td>
                     <td className="py-2.5 pr-4 text-right font-semibold text-slate-900">{formatMoney(c.revenue, currency)}</td>
-                    <td className="py-2.5 text-right">{changeText(c.revenue_change_pct, c.is_new, c.prior_revenue)}</td>
+                    <td className="py-2.5 text-right">{changeText(c.revenue_change_pct, c.is_new, c.prior_revenue, c.revenue, currency)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -277,14 +278,14 @@ function ProductAnalytics() {
                         <td className="py-3 pr-4 text-right text-slate-700">{p.views?.toLocaleString() ?? "—"}</td>
                         <td className="py-3 pr-4 text-right text-slate-700">{pctText(p.view_to_purchase_rate)}</td>
                         <td className={`py-3 pr-4 text-right ${(p.vs_category_pts ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {p.vs_category_pts == null ? "—" : `${p.vs_category_pts > 0 ? "+" : ""}${p.vs_category_pts} pts`}
+                          {p.vs_category_pts == null ? "—" : ptsBoth(p.vs_category_pts, p.view_to_purchase_rate)}
                         </td>
                       </>
                     )}
                     <td className="py-3 pr-4 text-right text-slate-700">{p.quantity}</td>
                     <td className="py-3 pr-4 text-right text-slate-700">{p.orders || "—"}</td>
                     <td className="py-3 pr-4 text-right font-semibold text-slate-900">{formatMoney(p.revenue, currency)}</td>
-                    <td className="py-3 pr-4 text-right">{changeText(p.revenue_change_pct, p.is_new, p.prior_revenue)}</td>
+                    <td className="py-3 pr-4 text-right">{changeText(p.revenue_change_pct, p.is_new, p.prior_revenue, p.revenue, currency)}</td>
                     {viewsOn && (
                       <td className="py-3 text-right">
                         {p.group && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${GROUPS[p.group].badge}`}>{GROUPS[p.group].label}</span>}

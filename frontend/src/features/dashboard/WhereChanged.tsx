@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import InfoTip from "../../components/InfoTip";
 import { api, formatMoney, type WhereChanged, type WhereRow } from "../../services/api";
+import { countBothFromValues, pctBoth, ptsBoth } from "../../lib/change";
 
 // Overview "Where it changed" (device / channel) + "Top movers" - checklist section 2, P2.
 // Colour = good or bad for the store, not up or down.
@@ -10,8 +11,6 @@ type Range = "yesterday" | 7 | 28;
 
 const tone = (v: number | null | undefined) =>
     v == null || v === 0 ? "text-slate-400" : v > 0 ? "text-emerald-600" : "text-red-600";
-const signed = (v: number | null | undefined, unit: string, digits = 1) =>
-    v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(digits)}${unit}`;
 
 function Table({ title, rows, showRps, currency }: { title: string; rows: WhereRow[]; showRps: boolean; currency: string | null | undefined }) {
     const shown = rows.filter((r) => r.sessions > 0 || r.previous_sessions > 0).slice(0, 6);
@@ -35,21 +34,21 @@ function Table({ title, rows, showRps, currency }: { title: string; rows: WhereR
                                 <td className="py-2 pr-2 font-medium text-slate-800">{r.label}</td>
                                 <td className="py-2 text-right">
                                     <span className="font-semibold text-slate-900">{r.sessions.toLocaleString()}</span>
-                                    <span className={`ml-1.5 text-xs font-semibold ${tone(r.sessions_change_pct)}`}>{signed(r.sessions_change_pct, "%", 0)}</span>
+                                    <span className={`ml-1.5 text-xs font-semibold ${tone(r.sessions_change_pct)}`}>{pctBoth(r.sessions_change_pct, r.sessions) ?? ""}</span>
                                 </td>
                                 <td className="py-2 text-right">
                                     <span className="font-semibold text-slate-900">{r.conversion_rate != null ? `${r.conversion_rate}%` : "—"}</span>
-                                    <span className={`ml-1.5 text-xs font-semibold ${tone(r.conversion_change_pts)}`}>{signed(r.conversion_change_pts, " pts", 2)}</span>
+                                    <span className={`ml-1.5 text-xs font-semibold ${tone(r.conversion_change_pts)}`}>{ptsBoth(r.conversion_change_pts, r.conversion_rate, 2) ?? ""}</span>
                                 </td>
                                 {showRps && (
                                     <td className="py-2 text-right">
                                         <span className="font-semibold text-slate-900">{r.revenue_per_session != null ? formatMoney(r.revenue_per_session, currency, 2) : "—"}</span>
-                                        <span className={`ml-1.5 text-xs font-semibold ${tone(r.revenue_per_session_change_pct)}`}>{signed(r.revenue_per_session_change_pct, "%", 0)}</span>
+                                        <span className={`ml-1.5 text-xs font-semibold ${tone(r.revenue_per_session_change_pct)}`}>{pctBoth(r.revenue_per_session_change_pct, r.revenue_per_session, (a) => formatMoney(a, currency, 2)) ?? ""}</span>
                                     </td>
                                 )}
                                 <td className="py-2 text-right">
                                     <span className="font-semibold text-slate-900">{r.purchases.toLocaleString()}</span>
-                                    <span className={`ml-1.5 text-xs font-semibold ${tone(r.purchases_change)}`}>{r.purchases_change > 0 ? "+" : ""}{r.purchases_change}</span>
+                                    <span className={`ml-1.5 text-xs font-semibold ${tone(r.purchases_change)}`}>{countBothFromValues(r.purchases, r.purchases - r.purchases_change)}</span>
                                 </td>
                             </tr>
                         ))}

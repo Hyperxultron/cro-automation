@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import InfoTip from "../../components/InfoTip";
 import { api, type GeoRow, type GeoSplit } from "../../services/api";
+import { ptsBoth } from "../../lib/change";
 
 // Conversion by country and US state (checklist section 3, P2).
 type Range = "yesterday" | 7 | 28;
 
 const tone = (v: number | null | undefined) =>
     v == null || v === 0 ? "text-slate-400" : v > 0 ? "text-emerald-600" : "text-red-600";
-const signed = (v: number | null | undefined, unit: string, digits: number) =>
-    v == null ? "" : `${v > 0 ? "+" : ""}${v.toFixed(digits)}${unit}`;
 
 function GeoTable({ title, rows, storeCvr }: { title: string; rows: GeoRow[] | null; storeCvr: number | null }) {
     if (rows == null) return (
@@ -49,7 +48,7 @@ function GeoTable({ title, rows, storeCvr }: { title: string; rows: GeoRow[] | n
                                         </div>
                                         <span className="font-semibold text-slate-900">{r.conversion_rate != null ? `${r.conversion_rate}%` : "—"}</span>
                                         {r.enough_data && (
-                                            <span className={`text-xs font-semibold ${tone(r.conversion_change_pts)}`}>{signed(r.conversion_change_pts, " pts", 2)}</span>
+                                            <span className={`text-xs font-semibold ${tone(r.conversion_change_pts)}`}>{ptsBoth(r.conversion_change_pts, r.conversion_rate, 2) ?? ""}</span>
                                         )}
                                     </div>
                                 </td>

@@ -1,4 +1,5 @@
 import type { FunnelCompare } from "../../services/api";
+import { ptsBoth } from "../../lib/change";
 
 // Horizontal funnel bars (checklist: "bars for funnels"). Each step shows its
 // count, share of sessions, step-to-step %, and the comparison window's
@@ -25,7 +26,7 @@ function FunnelBars({ data, loading, compact = false }: { data: FunnelCompare | 
                                 {i > 0 && step.step_pct != null && <> · {step.step_pct}% of previous step</>}
                                 {i > 0 && !data.too_early && change != null && (
                                     <span className={`ml-2 font-semibold ${change === 0 ? "text-slate-400" : change > 0 ? "text-emerald-600" : "text-red-600"}`}>
-                                        {change > 0 ? "+" : ""}{change} pts
+                                        {ptsBoth(change, step.step_pct)}
                                     </span>
                                 )}
                             </span>

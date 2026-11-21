@@ -4,6 +4,7 @@ import { AlertTriangle, Info, MonitorSmartphone, Route, Search, Share2 } from "l
 import { api, type LandingRange, formatMoney, type DashboardSummary, type LandingPagesData, type LandingSplitRow } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
+import { ptsBoth } from "../../lib/change";
 
 // Landing pages, page types and bounce rate (manager checklist, section 5).
 
@@ -12,11 +13,11 @@ type SortKey = "sessions" | "bounce_rate" | "conversion_rate" | "revenue_per_ses
 const pct = (v: number | null | undefined) => (v == null ? "—" : `${v}%`);
 
 // lowerIsBetter: bounce going up is bad (red); conversion going up is good (green).
-function Change({ pts, lowerIsBetter = false }: { pts: number | null | undefined; lowerIsBetter?: boolean }) {
+function Change({ pts, cur, lowerIsBetter = false }: { pts: number | null | undefined; cur?: number | null; lowerIsBetter?: boolean }) {
   if (pts == null) return null;
   const good = lowerIsBetter ? pts < 0 : pts > 0;
   const cls = pts === 0 ? "text-slate-400" : good ? "text-emerald-600" : "text-red-600";
-  return <span className={`ml-1 text-[11px] ${cls}`}>{pts > 0 ? "+" : ""}{pts} pts</span>;
+  return <span className={`ml-1 text-[11px] ${cls}`}>{ptsBoth(pts, cur)}</span>;
 }
 
 function BounceBar({ value }: { value: number | null }) {
@@ -73,12 +74,12 @@ function SplitTable({ title, help, icon, rows, minSessions, period, showShare = 
                   <td className="py-2.5 pr-4">
                     <div className="flex items-center">
                       <BounceBar value={r.bounce_rate} />
-                      <Change pts={r.bounce_change_pts} lowerIsBetter />
+                      <Change pts={r.bounce_change_pts} cur={r.bounce_rate} lowerIsBetter />
                     </div>
                   </td>
                   <td className="py-2.5 pr-4 text-right text-slate-600">{pct(r.added_to_cart_rate)}</td>
                   <td className="py-2.5 text-right text-slate-700">
-                    {r.sessions < minSessions ? <span className="text-xs text-slate-400">Too few sessions</span> : <>{pct(r.conversion_rate)}<Change pts={r.conversion_change_pts} /></>}
+                    {r.sessions < minSessions ? <span className="text-xs text-slate-400">Too few sessions</span> : <>{pct(r.conversion_rate)}<Change pts={r.conversion_change_pts} cur={r.conversion_rate} /></>}
                   </td>
                 </tr>
               ))}
@@ -287,7 +288,7 @@ function LandingPages() {
                         <td className="py-3 pr-4">
                           <div className="flex items-center">
                             <BounceBar value={p.bounce_rate} />
-                            <Change pts={p.bounce_change_pts} lowerIsBetter />
+                            <Change pts={p.bounce_change_pts} cur={p.bounce_rate} lowerIsBetter />
                           </div>
                           {p.bounce_flag && p.previous_bounce_rate != null && (
                             <p className="mt-0.5 text-[11px] text-red-600">usually {p.previous_bounce_rate}%</p>
@@ -295,7 +296,7 @@ function LandingPages() {
                         </td>
                         <td className="py-3 pr-4 text-right text-slate-600">{pct(p.added_to_cart_rate)}</td>
                         <td className="py-3 pr-4 text-right text-slate-700">
-                          {p.too_few_sessions ? <span className="text-xs text-slate-400">Too few sessions</span> : <>{pct(p.conversion_rate)}<Change pts={p.conversion_change_pts} /></>}
+                          {p.too_few_sessions ? <span className="text-xs text-slate-400">Too few sessions</span> : <>{pct(p.conversion_rate)}<Change pts={p.conversion_change_pts} cur={p.conversion_rate} /></>}
                         </td>
                         {data.revenue_available && <td className="py-3 pr-4 text-right font-semibold text-slate-900">{p.revenue == null ? "—" : formatMoney(p.revenue, currency)}</td>}
                         {data.revenue_available && (

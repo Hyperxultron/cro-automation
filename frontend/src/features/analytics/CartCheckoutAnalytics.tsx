@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import CartExtras from "./CartExtras";
 import AbandonmentTrend from "./AbandonmentTrend";
 import { api, type Benchmarks, type Funnel, type FunnelTrendDay } from "../../services/api";
+import { ptsBothFromValues } from "../../lib/change";
 
 function CartCheckoutAnalytics() {
   const [funnel, setFunnel] = useState<Funnel | null>(null);
@@ -54,7 +55,7 @@ function CartCheckoutAnalytics() {
     const d = Math.round((cur - prev) * 10) / 10;
     return (
       <span className={`ml-2 rounded-md px-1.5 py-0.5 text-xs font-semibold ${d === 0 ? "bg-slate-100 text-slate-500" : d < 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-        {d > 0 ? "▲ +" : d < 0 ? "▼ " : ""}{d} pts
+        {d > 0 ? "▲ " : d < 0 ? "▼ " : ""}{ptsBothFromValues(cur, prev)}
       </span>
     );
   };

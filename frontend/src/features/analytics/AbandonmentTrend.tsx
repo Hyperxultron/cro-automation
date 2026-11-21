@@ -3,6 +3,7 @@ import type { EChartsOption } from "echarts";
 import EChart, { FONT, tipBase, useOceanTheme } from "../../components/EChart";
 import InfoTip from "../../components/InfoTip";
 import { api, type FunnelTrendDay } from "../../services/api";
+import { ptsBothFromValues } from "../../lib/change";
 
 // Cart + checkout abandonment over time (checklist section 6, P1: "with trend").
 // Solid = this period, dashed = the same number of days just before.
@@ -24,7 +25,7 @@ function Pts({ cur, prev }: { cur: number | null; prev: number | null }) {
     const good = d <= 0;
     return (
         <span className={`rounded-md px-1.5 py-0.5 text-xs font-semibold ${d === 0 ? "bg-slate-100 text-slate-500" : good ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-            {d > 0 ? "▲ +" : d < 0 ? "▼ " : ""}{d} pts
+            {d > 0 ? "▲ " : d < 0 ? "▼ " : ""}{ptsBothFromValues(cur, prev)}
         </span>
     );
 }

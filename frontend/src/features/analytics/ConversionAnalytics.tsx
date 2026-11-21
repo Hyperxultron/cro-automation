@@ -6,6 +6,7 @@ import { api, formatMoney, type Benchmarks, type CvrDay, type DashboardSummary, 
 import FunnelBars from "./FunnelBars";
 import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
+import { pctBoth, ptsBoth } from "../../lib/change";
 
 type SortKey = "sessions" | "added_to_cart_rate" | "conversion_rate" | "aov" | "revenue_per_session" | "orders";
 
@@ -62,15 +63,15 @@ function SegmentTable({ title, data, loading, currency }: { title: string; data:
     const parts: { text: string; good: boolean | null }[] = [];
     if (row.conversion_rate_change_pts !== null) {
       const v = row.conversion_rate_change_pts;
-      parts.push({ text: `CVR ${v > 0 ? "+" : ""}${v} pts`, good: v === 0 ? null : v > 0 });
+      parts.push({ text: `CVR ${ptsBoth(v, row.conversion_rate, 2)}`, good: v === 0 ? null : v > 0 });
     }
     if (row.revenue_per_session_change_pct !== null) {
       const v = row.revenue_per_session_change_pct;
-      parts.push({ text: `RPS ${v > 0 ? "+" : ""}${v}%`, good: v === 0 ? null : v > 0 });
+      parts.push({ text: `RPS ${pctBoth(v, row.revenue_per_session, (a) => formatMoney(a, currency, 2))}`, good: v === 0 ? null : v > 0 });
     }
     if (row.sessions_change_pct !== null) {
       const v = row.sessions_change_pct;
-      parts.push({ text: `sessions ${v > 0 ? "+" : ""}${v}%`, good: null });
+      parts.push({ text: `sessions ${pctBoth(v, row.sessions)}`, good: null });
     }
     if (parts.length === 0) return <span className="text-slate-400">—</span>;
     return (
