@@ -24,6 +24,7 @@ import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
 import { BRAND, Logo } from "../../brand";
+import ShopifyMark from "../../components/ShopifyMark";
 import { auth, isAuthEnabled } from "../../services/api";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
@@ -815,6 +816,21 @@ function Dashboard() {
                                         </button>
                                     );
                                 })()}
+                                <a
+                                    href={summary?.store.domain ? `https://${summary.store.domain}/admin` : "https://admin.shopify.com"}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title="Open Shopify admin"
+                                    className="ml-auto flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2 transition hover:border-[#95bf47]/50 hover:bg-[#95bf47]/10"
+                                >
+                                    <ShopifyMark size={24} />
+                                    <div>
+                                        <p className="text-xs text-slate-400">Live data from</p>
+                                        <p className="text-sm font-semibold text-slate-800">
+                                            Shopify{summary?.store.domain ? <span className="ml-1.5 text-xs font-medium text-slate-500">{summary.store.domain}</span> : null}
+                                        </p>
+                                    </div>
+                                </a>
                             </div>
 
                             {error && (
