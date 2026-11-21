@@ -1,24 +1,22 @@
 """
-API protection (har request par chalta hai, kuch public paths chhodkar).
+Simple API key protection.
 
-1. Login ON (auth.py ke 3 env vars set): sirf valid login token wali request
-   chalegi. Frontend bundle wali API key ab kaafi nahi hai.
-2. Login OFF: purana behaviour - DASHBOARD_API_KEY set ho toh `x-api-key`
-   header chahiye, set na ho toh protection off (local testing).
+Agar backend .env mein DASHBOARD_API_KEY set hai, toh har request
+(kuch exempt paths chhodkar) mein sahi `x-api-key` header hona zaroori hai.
+
+DASHBOARD_API_KEY set NAHI hai (jaise abhi local testing mein) -> koi
+protection nahi, purana behavior waisa hi chalega. Isse manual Swagger
+testing nahi tootegi.
 """
 
 import os
 
 from fastapi import Depends, HTTPException, Request
 
-from auth import auth_enabled, user_from_request
-
 EXEMPT_PATHS = {
     "/",
     "/health",
     "/shopify/auth",
-    "/auth/status",
-    "/auth/login",
     "/docs",
     "/redoc",
     "/openapi.json",
@@ -28,11 +26,6 @@ EXEMPT_PATHS = {
 def verify_api_key(request: Request):
     path = request.url.path
     if request.method == "OPTIONS" or path in EXEMPT_PATHS or path.startswith("/docs") or path.startswith("/openapi"):
-        return
-
-    if auth_enabled():
-        if not user_from_request(request):
-            raise HTTPException(status_code=401, detail="Please log in.")
         return
 
     expected = os.getenv("DASHBOARD_API_KEY")

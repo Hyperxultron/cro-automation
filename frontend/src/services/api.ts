@@ -777,50 +777,11 @@ export type OrderHealth = {
   pending: { count: number; pct: number };
 };
 
-// --- Login (Ridhi Pulse) -------------------------------------------------
-const TOKEN_KEY = "rp.token";
-let authOn = false;
-
-export const getToken = (): string | null => {
-  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
-};
-const setToken = (t: string | null) => {
-  try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch { /* private mode */ }
-};
-export const isAuthEnabled = () => authOn;
-
-export const auth = {
-  status: async (): Promise<{ enabled: boolean }> => {
-    const r = await request<{ enabled: boolean }>("/auth/status");
-    authOn = !!r.enabled;
-    return r;
-  },
-  me: () => request<{ username: string | null; auth_enabled: boolean }>("/auth/me"),
-  login: async (username: string, password: string) => {
-    const r = await request<{ token: string; username: string; expires_at: string }>("/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    setToken(r.token);
-    return r;
-  },
-  logout: () => {
-    setToken(null);
-    window.dispatchEvent(new Event("rp:logout"));
-  },
-};
-
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   if (API_KEY) headers.set("x-api-key", API_KEY);
-  const token = getToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
-  if (response.status === 401 && authOn && !path.startsWith("/auth/login")) {
-    auth.logout(); // login khatam / galat -> login page
-  }
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try {

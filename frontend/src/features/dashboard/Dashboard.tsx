@@ -26,11 +26,10 @@ import { HELP } from "../../components/helpText";
 import ComingSoon from "../misc/ComingSoon";
 import { BRAND, Logo } from "../../brand";
 import ShopifyMark from "../../components/ShopifyMark";
-import { auth, isAuthEnabled } from "../../services/api";
 import {
     Activity, ArrowDownRight, ArrowUpRight,
     Bell, CalendarDays, ChevronDown, Moon, Sun, Clock3, DollarSign, FileText, FlaskConical, Gauge, Globe, History, IndianRupee, LayoutDashboard,
-    Lightbulb, LogOut, Menu, Microscope, Package, RefreshCw, Route, Settings, ShieldCheck,
+    Lightbulb, Menu, Microscope, Package, RefreshCw, Route, Settings, ShieldCheck,
     ShoppingCart, TrendingUp, Users, X
 } from "lucide-react";
 import {
@@ -514,7 +513,7 @@ function Dashboard() {
                         ))}
                     </div>
 
-                    {/* On short screens only the status card hides, so the menu keeps room and logout stays visible. */}
+                    {/* On short screens only the status card hides, so the menu keeps room. */}
                     <div className="p-5 [@media(max-height:860px)]:pt-2">
                         <div className="mb-5 rounded-2xl border border-white/10 bg-white/5 p-4 [@media(max-height:860px)]:hidden">
                             <div className="mb-3 flex items-center gap-2 text-[#bae6fd]">
@@ -544,16 +543,6 @@ function Dashboard() {
                             >
                                 <Settings size={17} />
                             </button>
-                            {isAuthEnabled() && (
-                                <button
-                                    onClick={() => auth.logout()}
-                                    title="Log out"
-                                    aria-label="Log out"
-                                    className="rounded-lg p-1.5 text-[#7fb0c6] transition hover:bg-white/10 hover:text-white"
-                                >
-                                    <LogOut size={17} />
-                                </button>
-                            )}
                         </div>
                     </div>
                 </aside>
