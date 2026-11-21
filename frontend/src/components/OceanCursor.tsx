@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
-// Ocean Pro cursor: a small dot that follows the mouse exactly, and a soft ring
-// that trails behind it and grows over anything clickable. Normal cursor stays
+// Comet Trail cursor: a teal dot that follows the mouse exactly, with a tail of
+// smaller fading dots behind it. Over anything clickable the dot becomes a ring. Normal cursor stays
 // in text fields. Off on touch screens and for "reduce motion" users.
 
 const CLICKABLE =
@@ -10,58 +10,63 @@ const TEXT_FIELD =
     'input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="submit"]):not([type="button"]), textarea, [contenteditable="true"]';
 
 export default function OceanCursor() {
-    const dotRef = useRef<HTMLDivElement>(null);
-    const ringRef = useRef<HTMLDivElement>(null);
+    const headRef = useRef<HTMLDivElement>(null);
+    const tailRefs = useRef<(HTMLDivElement | null)[]>([]);
 
     useEffect(() => {
         const fine = window.matchMedia("(hover: hover) and (pointer: fine)");
         const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
         if (!fine.matches || reduce.matches) return;
 
-        const dot = dotRef.current;
-        const ring = ringRef.current;
-        if (!dot || !ring) return;
+        const head = headRef.current;
+        const tail = tailRefs.current.filter(Boolean) as HTMLDivElement[];
+        if (!head || !tail.length) return;
 
         const root = document.documentElement;
         root.classList.add("ocean-cursor-on");
 
-        let x = -100, y = -100, rx = -100, ry = -100;
+        let x = -100, y = -100;
+        const pts = tail.map(() => ({ x: -100, y: -100 }));
         let raf = 0;
         let visible = false;
 
+        // Each tail dot chases the one in front of it -> a smooth comet tail.
         const tick = () => {
-            rx += (x - rx) * 0.2;
-            ry += (y - ry) * 0.2;
-            ring.style.transform = `translate3d(${rx}px, ${ry}px, 0)`;
-            if (Math.abs(x - rx) > 0.1 || Math.abs(y - ry) > 0.1) raf = requestAnimationFrame(tick);
-            else raf = 0;
+            let px = x, py = y, moving = false;
+            pts.forEach((p, i) => {
+                p.x += (px - p.x) * 0.42;
+                p.y += (py - p.y) * 0.42;
+                if (Math.abs(px - p.x) > 0.15 || Math.abs(py - p.y) > 0.15) moving = true;
+                tail[i].style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                px = p.x;
+                py = p.y;
+            });
+            raf = moving ? requestAnimationFrame(tick) : 0;
         };
 
         const setState = (target: Element | null) => {
             const el = target instanceof Element ? target : null;
             const text = !!el?.closest(TEXT_FIELD);
             const hover = !text && !!el?.closest(CLICKABLE);
-            const chart = !text && !hover && el?.tagName === "CANVAS";
             root.classList.toggle("ocean-cursor-text", text);
-            ring.dataset.state = hover ? "hover" : chart ? "chart" : "";
+            root.classList.toggle("ocean-cursor-hover", hover);
         };
 
         const onMove = (e: PointerEvent) => {
             if (e.pointerType !== "mouse") return;
             x = e.clientX;
             y = e.clientY;
-            dot.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+            head.style.transform = `translate3d(${x}px, ${y}px, 0)`;
             if (!visible) {
                 visible = true;
-                rx = x;
-                ry = y;
+                pts.forEach((p) => { p.x = x; p.y = y; });
                 root.classList.add("ocean-cursor-visible");
             }
             setState(e.target as Element);
             if (!raf) raf = requestAnimationFrame(tick);
         };
-        const onDown = () => ring.classList.add("is-down");
-        const onUp = () => ring.classList.remove("is-down");
+        const onDown = () => root.classList.add("ocean-cursor-down");
+        const onUp = () => root.classList.remove("ocean-cursor-down");
         const onLeave = () => {
             visible = false;
             root.classList.remove("ocean-cursor-visible");
@@ -80,14 +85,16 @@ export default function OceanCursor() {
             window.removeEventListener("pointerup", onUp);
             document.removeEventListener("mouseleave", onLeave);
             window.removeEventListener("blur", onLeave);
-            root.classList.remove("ocean-cursor-on", "ocean-cursor-visible", "ocean-cursor-text");
+            root.classList.remove("ocean-cursor-on", "ocean-cursor-visible", "ocean-cursor-text", "ocean-cursor-hover", "ocean-cursor-down");
         };
     }, []);
 
     return (
-        <>
-            <div ref={ringRef} className="ocean-cursor-ring" aria-hidden="true"><span /></div>
-            <div ref={dotRef} className="ocean-cursor-dot" aria-hidden="true"><span /></div>
-        </>
+        <div className="comet-cursor" aria-hidden="true">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div key={i} ref={(el) => { tailRefs.current[i] = el; }} className="comet-tail" style={{ ["--i" as string]: i }}><span /></div>
+            ))}
+            <div ref={headRef} className="comet-head"><span /></div>
+        </div>
     );
 }
