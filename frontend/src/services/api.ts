@@ -83,6 +83,25 @@ export type AlarmRuleItem = {
   page?: string | null;
 };
 
+export type KpiCalendarDay = {
+  date: string;
+  revenue: number | null;
+  orders: number;
+  aov: number | null;
+  sessions: number | null;
+  cvr: number | null;
+  rps: number | null;
+};
+
+export type KpiCalendar = {
+  first: string;
+  last: string;
+  timezone: string | null;
+  revenue_source: "shopify" | "orders";
+  sessions_error: string | null;
+  days: KpiCalendarDay[];
+};
+
 export type SettingsData = {
   store_name: string;
   store_domain: string;
@@ -897,6 +916,7 @@ export const api = {
   // period "date" = one day picked on the calendar (YYYY-MM-DD in `date`).
   overview: (period: "yesterday" | "today" | "last7" | "date" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg", date?: string) =>
     request<Overview>(`/dashboard/overview?period=${period === "date" ? "yesterday" : period}&compare=${compare}${period === "date" && date ? `&date=${date}` : ""}`),
+  kpiCalendar: (days = 35) => request<KpiCalendar>(`/dashboard/kpi-calendar?days=${days}`),
   salesTrend: (days = 14, includeToday = false) =>
     request<SalesTrend>(`/dashboard/sales-trend?days=${days}${includeToday ? "&include_today=true" : ""}`),
   salesBreakdown: (period: "yesterday" | "today" | "last7" | "date" = "yesterday", compare: "4week_avg" | "last_week" = "4week_avg", date?: string) =>

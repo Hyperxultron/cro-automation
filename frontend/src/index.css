@@ -321,3 +321,11 @@ html.ocean-cursor-on input[type="submit"],
 html.ocean-cursor-on input[type="button"] {
     cursor: none !important;
 }
+
+/* ---- KPI card popup (calendar + related) ------------------------------- */
+@keyframes kpiPopIn { from { opacity: 0; transform: translateY(12px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes kpiFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.kpi-pop { animation: kpiPopIn .22s cubic-bezier(.2,.8,.2,1); }
+.kpi-backdrop { animation: kpiFadeIn .18s ease-out; }
+.kpi-tile-click { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .kpi-pop, .kpi-backdrop { animation: none; } }

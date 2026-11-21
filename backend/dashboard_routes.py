@@ -830,6 +830,19 @@ def funnel_devices(
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 
+@router.get("/kpi-calendar")
+def kpi_calendar(
+    days: int = Query(35, ge=7, le=56),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Overview card popup: every day's numbers for the last `days` complete days."""
+    from kpi_calendar import fetch_kpi_calendar
+
+    store = _get_store(db, shop)
+    return fetch_kpi_calendar(db, store, days=days)
+
+
 @router.get("/kpi-totals")
 def kpi_totals(shop: str | None = Query(None), db: Session = Depends(get_db)):
     from overview_extras import fetch_kpi_totals

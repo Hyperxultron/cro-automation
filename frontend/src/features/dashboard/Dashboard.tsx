@@ -12,6 +12,7 @@ import StoreIntegration from "../store/StoreIntegration";
 import { BuyHeatmapCard, OverviewTrendsRow, SalesOverTimeChart, TrafficSourcesCard } from "./OceanCharts";
 import CroRecommendations from "../recommendations/CroRecommendations";
 import WhereChangedCard from "./WhereChanged";
+import KpiPopup, { type KpiKey } from "./KpiPopup";
 import Experiments, { type ExperimentPrefill } from "../experiments/Experiments";
 import DeeperAnalyses from "../analytics/DeeperAnalyses";
 import ConversionAnalytics from "../analytics/ConversionAnalytics";
@@ -156,6 +157,7 @@ function Dashboard() {
     const [overviewPeriod, setOverviewPeriod] = useState<"yesterday" | "today" | "last7" | "date">("yesterday");
     // Calendar pick (period "date"): one store day, YYYY-MM-DD.
     const [pickedDate, setPickedDate] = useState<string>("");
+    const [openKpi, setOpenKpi] = useState<string | null>(null); // card label whose popup is open
     const dateInputRef = useRef<HTMLInputElement>(null);
     const [overviewCompare, setOverviewCompare] = useState<"4week_avg" | "last_week">("4week_avg");
     const [overview, setOverview] = useState<Overview | null>(null);
@@ -905,11 +907,11 @@ function Dashboard() {
                                     const cards: {
                                         label: string; period: string; value: string; icon: typeof Bell; color: string;
                                         change: { text: string; tone: string; showArrow: boolean }; note: string;
-                                        spark?: (number | null)[]; help: string;
+                                        spark?: (number | null)[]; help: string; metric: KpiKey;
                                         range?: { value: KpiRange; set: (r: KpiRange) => void };
                                     }[] = [
                                         {
-                                            label: "Revenue", help: HELP.revenue,
+                                            label: "Revenue", metric: "revenue", help: HELP.revenue,
                                             period: periodLabel,
                                             value: loading ? "…" : revenueMetric?.value != null ? formatMoney(revenueMetric.value, currency) : "—",
                                             icon: MoneyIcon, color: "rose",
@@ -918,7 +920,7 @@ function Dashboard() {
                                             note: baselineNote(revenueMetric, money2),
                                         },
                                         {
-                                            label: "Orders", help: HELP.orders,
+                                            label: "Orders", metric: "orders", help: HELP.orders,
                                             period: periodLabel,
                                             value: loading ? "…" : ordersMetric?.value != null ? String(ordersMetric.value) : "—",
                                             icon: Activity, color: "emerald",
@@ -927,7 +929,7 @@ function Dashboard() {
                                             note: baselineNote(ordersMetric, (v) => String(v)),
                                         },
                                         {
-                                            label: "Average Order Value", help: "Average order value = sales after discounts / orders (cancelled and test orders left out). Compared the same way as the other cards.",
+                                            label: "Average Order Value", metric: "aov", help: "Average order value = sales after discounts / orders (cancelled and test orders left out). Compared the same way as the other cards.",
                                             period: periodLabel,
                                             value: loading ? "…" : aovMetric?.value != null ? formatMoney(aovMetric.value, currency, 2) : "—",
                                             icon: ShoppingCart, color: "blue",
@@ -936,7 +938,7 @@ function Dashboard() {
                                             note: baselineNote(aovMetric, (v) => formatMoney(v, currency, 2)),
                                         },
                                         {
-                                            label: "Conversion Rate", help: HELP.conversionRate,
+                                            label: "Conversion Rate", metric: "cvr", help: HELP.conversionRate,
                                             period: periodLabel,
                                             value: loading ? "…" : cvrMetric?.value != null ? `${cvrMetric.value}%` : "—",
                                             icon: TrendingUp, color: "violet",
@@ -945,7 +947,7 @@ function Dashboard() {
                                             note: cvrMetric?.base_label ?? (overview?.cvr_error ? "Shopify analytics unavailable" : "Loading…"),
                                         },
                                         {
-                                            label: "Sessions", help: "Visits to the store from Shopify Analytics, bots excluded. Compared the same way as the other cards; below ~500 sessions it's too early to compare.",
+                                            label: "Sessions", metric: "sessions", help: "Visits to the store from Shopify Analytics, bots excluded. Compared the same way as the other cards; below ~500 sessions it's too early to compare.",
                                             period: periodLabel,
                                             value: loading ? "…" : sessMetric?.value != null ? sessMetric.value.toLocaleString() : "—",
                                             icon: Users, color: "amber",
@@ -954,7 +956,7 @@ function Dashboard() {
                                             note: baselineNote(sessMetric, (v) => v.toLocaleString()),
                                         },
                                         {
-                                            label: "Revenue per Session", help: "Revenue per session = Shopify total sales / sessions (bots excluded) for the same period. Shows conversion and order value together in one number.",
+                                            label: "Revenue per Session", metric: "rps", help: "Revenue per session = Shopify total sales / sessions (bots excluded) for the same period. Shows conversion and order value together in one number.",
                                             period: periodLabel,
                                             value: loading ? "…" : rpsMetric?.value != null ? formatMoney(rpsMetric.value, currency, 2) : "—",
                                             icon: MoneyIcon, color: "emerald",
@@ -963,7 +965,7 @@ function Dashboard() {
                                             note: baselineNote(rpsMetric, (v) => formatMoney(v, currency, 2)),
                                         },
                                         {
-                                            label: "Total Sales", help: "Shopify's Total sales (after discounts and returns, incl. tax and shipping), same as Shopify Analytics. Switch between today so far, yesterday and the last 30 complete days.",
+                                            label: "Total Sales", metric: "revenue", help: "Shopify's Total sales (after discounts and returns, incl. tax and shipping), same as Shopify Analytics. Switch between today so far, yesterday and the last 30 complete days.",
                                             period: withCompare(salesRange),
                                             value: kpiTotals?.sales[salesRange] != null ? formatMoney(kpiTotals.sales[salesRange] as number, currency) : loading ? "…" : "—",
                                             change: rangeChange(kpiTotals?.sales[salesRange], kpiTotals?.sales.previous?.[salesRange], true),
@@ -972,7 +974,7 @@ function Dashboard() {
                                             range: { value: salesRange, set: setSalesRange },
                                         },
                                         {
-                                            label: "Total Sessions", help: "Visits to the store from Shopify Analytics, bots excluded (same as Shopify's Sessions). Switch between today so far, yesterday and the last 30 complete days.",
+                                            label: "Total Sessions", metric: "sessions", help: "Visits to the store from Shopify Analytics, bots excluded (same as Shopify's Sessions). Switch between today so far, yesterday and the last 30 complete days.",
                                             period: withCompare(sessRange),
                                             value: kpiTotals?.sessions[sessRange] != null ? (kpiTotals.sessions[sessRange] as number).toLocaleString() : loading ? "…" : "—",
                                             change: rangeChange(kpiTotals?.sessions[sessRange], kpiTotals?.sessions.previous?.[sessRange], false, (kpiTotals?.sessions[sessRange] ?? 0) < MIN_SESSIONS_FOR_COMPARISON),
@@ -987,11 +989,28 @@ function Dashboard() {
                                     const tile: Record<string, string> = {
                                         rose: "kpi-blue", blue: "kpi-teal", violet: "kpi-indigo", emerald: "kpi-amber", amber: "kpi-rose",
                                     };
-                                    return cards.map((item) => {
+                                    const open = cards.find((c) => c.label === openKpi);
+                                    const focusDate = overviewPeriod === "date" && pickedDate ? pickedDate : null;
+                                    return [...cards.map((item) => {
                                         const Icon = item.icon;
                                         const isDown = item.change.tone === "red";
                                         return (
-                                            <div key={item.label} className={`kpi-tile ${tile[item.color] ?? "kpi-blue"} rounded-2xl p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg`}>
+                                            <div
+                                                key={item.label}
+                                                role="button"
+                                                tabIndex={0}
+                                                aria-label={`Open ${item.label} by day`}
+                                                onClick={(e) => {
+                                                    // Range buttons and the info tip keep their own clicks.
+                                                    if ((e.target as HTMLElement).closest("button")) return;
+                                                    setOpenKpi(item.label);
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.target !== e.currentTarget) return;
+                                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenKpi(item.label); }
+                                                }}
+                                                className={`kpi-tile kpi-tile-click ${tile[item.color] ?? "kpi-blue"} rounded-2xl p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500`}
+                                            >
                                                 <div className="relative flex items-center justify-between">
                                                     <div>
                                                         <p className="text-sm font-medium text-white/90">{item.label}<InfoTip text={item.help} /></p>
@@ -1025,7 +1044,26 @@ function Dashboard() {
                                                 <p className="cro-note relative mt-2 text-xs text-white/80">{item.note}</p>
                                             </div>
                                         );
-                                    });
+                                    }),
+                                    open && (
+                                        <KpiPopup
+                                            key="kpi-popup"
+                                            metric={open.metric}
+                                            title={open.label}
+                                            period={open.period}
+                                            value={open.value}
+                                            changeText={open.change.text}
+                                            changeDown={open.change.tone === "red"}
+                                            focusDate={focusDate}
+                                            currency={currency}
+                                            onClose={() => setOpenKpi(null)}
+                                            onOpenDay={(d) => {
+                                                setPickedDate(d);
+                                                setOverviewPeriod("date");
+                                                setOpenKpi(null);
+                                            }}
+                                        />
+                                    )];
                                 })()}
                             </div>
 
