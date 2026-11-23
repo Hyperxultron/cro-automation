@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Plus, Table2, X } from "lucide-react";
+import { Download, Plus, Search, Table2, X } from "lucide-react";
 import { api, type LandingDailyData, type LandingWindowMetrics } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
 import { fmtValue, pagePathLabel, type DeltaKind } from "./landingDelta";
@@ -44,6 +44,75 @@ function totalFor(days: LandingWindowMetrics[], key: MetricKey): number | null {
   return Math.round((w / s) * 100) / 100;
 }
 
+/** "Add a landing page" box: type to search, pick from the list (arrow keys + Enter work too). */
+function PageSearch({ pages, onPick }: { pages: { path: string; page_type: string; sessions_30d: number }[]; onPick: (p: string) => void }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => box.current && !box.current.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const matches = useMemo(() => {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return pages.filter((p) => words.every((w) => p.path.includes(w) || p.page_type.toLowerCase().includes(w))).slice(0, 60);
+  }, [pages, q]);
+
+  const pick = (p: string) => {
+    onPick(p);
+    setQ("");
+    setHi(0);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={box} className="relative">
+      <div className="flex items-center gap-1 rounded-lg border bg-white px-2 py-1 text-xs focus-within:border-blue-300">
+        <Plus size={13} className="text-blue-600" />
+        <Search size={12} className="text-slate-400" />
+        <input
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setHi(0); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setHi((h) => Math.min(h + 1, matches.length - 1)); }
+            else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+            else if (e.key === "Enter" && matches[hi]) { e.preventDefault(); pick(matches[hi].path); }
+            else if (e.key === "Escape") setOpen(false);
+          }}
+          placeholder="Search & add a landing page…"
+          className="w-56 bg-transparent text-slate-700 outline-none"
+        />
+      </div>
+      {open && (
+        <div className="absolute left-0 top-full z-40 mt-1 max-h-72 w-96 max-w-[85vw] overflow-y-auto rounded-xl border bg-white py-1 text-xs shadow-xl">
+          {matches.length === 0 ? (
+            <p className="px-3 py-2 text-slate-400">No landing page matches "{q}".</p>
+          ) : (
+            matches.map((p, i) => (
+              <button
+                key={p.path}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(p.path)}
+                onMouseEnter={() => setHi(i)}
+                className={`flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left ${i === hi ? "bg-blue-50 text-blue-700" : "text-slate-700"}`}
+              >
+                <span className="min-w-0 truncate" title={p.path}>{pagePathLabel(p.path)}</span>
+                <span className="shrink-0 text-[10px] text-slate-400">{p.page_type} · {p.sessions_30d.toLocaleString()} / 30d</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LandingDaily({ currency, onOpen, end = null }: { currency: string | null; onOpen: (path: string) => void; end?: string | null }) {
   const [days, setDays] = useState(30);
   const [metric, setMetric] = useState<MetricKey>("sessions");
@@ -51,7 +120,6 @@ function LandingDaily({ currency, onOpen, end = null }: { currency: string | nul
   const [data, setData] = useState<LandingDailyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState("");
   const loadedKey = useRef<string | null>(null);
 
   useEffect(() => {
@@ -106,7 +174,6 @@ function LandingDaily({ currency, onOpen, end = null }: { currency: string | nul
   const addPage = (p: string) => {
     if (!p) return;
     setPaths((cur) => (cur ?? []).includes(p) ? cur : [...(cur ?? []), p]);
-    setAdding("");
   };
 
   const downloadCsv = () => {
@@ -182,15 +249,7 @@ function LandingDaily({ currency, onOpen, end = null }: { currency: string | nul
           </span>
         ))}
         {data && !full && addable.length > 0 && (
-          <label className="inline-flex items-center gap-1 text-xs text-blue-600">
-            <Plus size={13} />
-            <select value={adding} onChange={(e) => addPage(e.target.value)} className="max-w-[260px] rounded-lg border px-2 py-1 text-xs text-slate-700">
-              <option value="">Add a landing page…</option>
-              {addable.map((p) => (
-                <option key={p.path} value={p.path}>{pagePathLabel(p.path)} ({p.sessions_30d.toLocaleString()} sessions / 30d)</option>
-              ))}
-            </select>
-          </label>
+          <PageSearch pages={addable} onPick={addPage} />
         )}
         {full && <span className="text-xs text-slate-400">Max {data?.max_pages} pages at a time.</span>}
       </div>
