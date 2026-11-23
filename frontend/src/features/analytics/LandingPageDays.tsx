@@ -38,7 +38,7 @@ function total(days: LandingWindowMetrics[], key: Key): number | null {
   return Math.round((days.reduce((a, d) => a + (d[key] ?? 0) * (d.sessions || 0), 0) / s) * 100) / 100;
 }
 
-function LandingPageDays({ path, currency, end = null }: { path: string; currency: string | null; end?: string | null }) {
+function LandingPageDays({ path, currency, end = null, tall = false }: { path: string; currency: string | null; end?: string | null; tall?: boolean }) {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<LandingDailyData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -120,12 +120,12 @@ function LandingPageDays({ path, currency, end = null }: { path: string; currenc
       {!data && !error && <p className="text-xs text-slate-400">Loading day-by-day numbers…</p>}
 
       {data && rows.length > 0 && (
-        <div className="max-h-[420px] overflow-auto rounded-xl border">
+        <div className={`${tall ? "max-h-[calc(100vh-150px)]" : "max-h-[420px]"} overflow-auto rounded-xl border`}>
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-white">
               <tr className="border-b text-xs text-slate-500">
                 <th className="px-3 py-2 text-left font-medium">Date</th>
-                {cols.map((c) => <th key={c.key} className="px-3 py-2 text-right font-medium">{c.label}</th>)}
+                {cols.map((c) => <th key={c.key} className="whitespace-nowrap px-3 py-2 text-right font-medium">{c.label}</th>)}
               </tr>
             </thead>
             <tbody>

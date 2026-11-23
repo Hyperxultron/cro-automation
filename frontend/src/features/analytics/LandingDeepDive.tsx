@@ -239,8 +239,12 @@ function LandingDeepDive({ path, currency, onClose, end = null }: { path: string
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={onClose}>
+      {/* Left side (wide screens): this page day by day, next to the deep dive */}
+      <div className="hidden h-full min-w-0 flex-1 overflow-y-auto p-4 xl:block" onClick={(e) => e.stopPropagation()}>
+        <LandingPageDays path={path} currency={currency} end={end} tall />
+      </div>
       <div
-        className="h-full w-full max-w-5xl overflow-y-auto bg-slate-50 p-4 shadow-2xl sm:p-6"
+        className="h-full w-full max-w-5xl overflow-y-auto bg-slate-50 p-4 shadow-2xl sm:p-6 xl:w-[56%] xl:max-w-none"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label={`Deep dive: ${path}`}
@@ -338,7 +342,7 @@ function LandingDeepDive({ path, currency, onClose, end = null }: { path: string
               </p>
             </Card>
 
-            <LandingPageDays path={path} currency={currency} end={end} />
+            <div className="xl:hidden"><LandingPageDays path={path} currency={currency} end={end} /></div>
 
             <Card icon={<TrendingUp className="text-blue-500" size={18} />} title="Daily trend (last 60 days)" help="Top chart: sessions (bars) and conversion rate on its own zoomed-in scale. Thin line = each day, thick pink line = 7-day average (smooths out noisy days). Bottom chart: bounce and add-to-cart rate.">
               <TrendChart daily={data.daily} />
