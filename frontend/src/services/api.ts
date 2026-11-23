@@ -494,6 +494,9 @@ export type FunnelStep = {
 
 export type LandingRange = "today" | "yesterday" | 7 | 28;
 
+/** A date range picked on the calendar (YYYY-MM-DD, store time zone). */
+export type PickedDates = { start: string; end: string };
+
 export type FunnelCompare = {
   period: "today" | "yesterday" | "last7";
   period_label: string;
@@ -954,19 +957,22 @@ export const api = {
     request<CartExtras>(
       `/dashboard/cart-extras?${typeof range === "number" ? `days=${range}` : `period=${range}`}${threshold ? `&threshold=${threshold}` : ""}${compare ? `&compare=${compare}` : ""}`,
     ),
-  landingGrids: (range: LandingRange = 28) =>
+  landingGrids: (range: LandingRange = 28, dates?: PickedDates | null) =>
     request<LandingGrids>(
-      typeof range === "number" ? `/dashboard/landing-grids?days=${range}` : `/dashboard/landing-grids?period=${range}`,
+      dates ? `/dashboard/landing-grids?start=${dates.start}&end=${dates.end}`
+        : typeof range === "number" ? `/dashboard/landing-grids?days=${range}` : `/dashboard/landing-grids?period=${range}`,
     ),
-  landingPages: (range: LandingRange = 28) =>
+  landingPages: (range: LandingRange = 28, dates?: PickedDates | null) =>
     request<LandingPagesData>(
-      typeof range === "number" ? `/dashboard/landing-pages?days=${range}` : `/dashboard/landing-pages?period=${range}`,
+      dates ? `/dashboard/landing-pages?start=${dates.start}&end=${dates.end}`
+        : typeof range === "number" ? `/dashboard/landing-pages?days=${range}` : `/dashboard/landing-pages?period=${range}`,
     ),
-  landingCompare: () => request<LandingCompareData>("/dashboard/landing-compare"),
-  landingDaily: (days: number, paths?: string[]) =>
-    request<LandingDailyData>(`/dashboard/landing-daily?days=${days}${paths?.length ? `&paths=${encodeURIComponent(paths.join("|"))}` : ""}`),
-  landingDeepDive: (path: string) =>
-    request<LandingDeepDive>(`/dashboard/landing-deep-dive?path=${encodeURIComponent(path)}`),
+  landingCompare: (end?: string | null) =>
+    request<LandingCompareData>(`/dashboard/landing-compare${end ? `?end=${end}` : ""}`),
+  landingDaily: (days: number, paths?: string[], end?: string | null) =>
+    request<LandingDailyData>(`/dashboard/landing-daily?days=${days}${paths?.length ? `&paths=${encodeURIComponent(paths.join("|"))}` : ""}${end ? `&end=${end}` : ""}`),
+  landingDeepDive: (path: string, end?: string | null) =>
+    request<LandingDeepDive>(`/dashboard/landing-deep-dive?path=${encodeURIComponent(path)}${end ? `&end=${end}` : ""}`),
   productAnalytics: (days = 28) => request<ProductAnalyticsData>(`/dashboard/product-analytics?days=${days}`),
   productPerformance: (days = 30) =>
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),

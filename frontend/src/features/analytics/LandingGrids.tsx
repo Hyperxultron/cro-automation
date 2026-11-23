@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import InfoTip from "../../components/InfoTip";
-import { api, type Grid, type GridCell, type LandingGrids as GridsData, type LandingRange } from "../../services/api";
+import { api, type Grid, type GridCell, type LandingGrids as GridsData, type LandingRange, type PickedDates } from "../../services/api";
 
 // Landing page x source, and device x page type (checklist section 3, P2).
 type Metric = "conversion_rate" | "added_to_cart_rate" | "bounce_rate";
@@ -62,7 +62,7 @@ function GridTable({ g, metric, rowHead, rowLabel }: { g: Grid; metric: Metric; 
     );
 }
 
-export default function LandingGrids({ range }: { range: LandingRange }) {
+export default function LandingGrids({ range, dates = null }: { range: LandingRange; dates?: PickedDates | null }) {
     const [data, setData] = useState<GridsData | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [m1, setM1] = useState<Metric>("conversion_rate");
@@ -72,11 +72,11 @@ export default function LandingGrids({ range }: { range: LandingRange }) {
         let live = true;
         setData(null);
         setError(null);
-        api.landingGrids(range)
+        api.landingGrids(range, dates)
             .then((d) => live && setData(d))
             .catch((e) => live && setError(e instanceof Error ? e.message : "Couldn't load"));
         return () => { live = false; };
-    }, [range]);
+    }, [range, dates?.start, dates?.end]);
 
     const picker = (m: Metric, set: (m: Metric) => void) => (
         <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">

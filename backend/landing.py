@@ -121,12 +121,25 @@ def _windows(store: models.Store, days: int):
     return first, yesterday, p_first, p_last
 
 
-def period_windows(store: models.Store, days: int, period: str | None):
+def custom_windows(start, end):
+    """A picked date range vs the same number of days right before it."""
+    n = (end - start).days + 1
+    p_last = start - timedelta(days=1)
+    p_first = p_last - timedelta(days=n - 1)
+    return (start, end, p_first, p_last,
+            f"{start.strftime('%d %b %Y')} - {end.strftime('%d %b %Y')} ({n} day{'s' if n != 1 else ''}, picked dates)",
+            f"{p_first.strftime('%d %b %Y')} - {p_last.strftime('%d %b %Y')}")
+
+
+def period_windows(store: models.Store, days: int, period: str | None, start=None, end=None):
     """
     Shared date windows for the Today / Yesterday / Last N days buttons.
     Returns (first, last, prev_first, prev_last, window_label, compare_label).
     Dates are in the store's time zone, same as Shopify admin.
+    start/end (dates) = a range picked on the calendar; overrides the buttons.
     """
+    if start is not None and end is not None:
+        return custom_windows(start, end)
     now = datetime.now(_tz(store))
     if period == "today":
         first = last = now.date()
@@ -178,7 +191,7 @@ def _split(cur: dict[str, dict], prev: dict[str, dict], min_sessions: int | None
 MIN_SESSIONS_ONE_DAY = 30  # a single day has far fewer visits per page
 
 
-def fetch_landing_pages(store: models.Store, days: int = 28, period: str | None = None) -> dict:
+def fetch_landing_pages(store: models.Store, days: int = 28, period: str | None = None, start=None, end=None) -> dict:
     """
     period None: last `days` complete days vs the `days` before.
     period "yesterday": yesterday vs the same weekday last week.
@@ -186,14 +199,17 @@ def fetch_landing_pages(store: models.Store, days: int = 28, period: str | None 
                     (rates like bounce % compare fine; session counts won't).
     """
     now = datetime.now(_tz(store))
-    period = period if period in ("today", "yesterday") else None
-    key = (store.store_url, days, period, now.date().isoformat())
+    custom = start is not None and end is not None
+    period = period if period in ("today", "yesterday") and not custom else None
+    if custom:
+        days = (end - start).days + 1
+    key = (store.store_url, days, period, now.date().isoformat(), start, end)
     cached = _cache.get(key)
     if cached and cached[0] > time.time():
         return cached[1]
 
-    first, last, p_first, p_last, window_label, compare_label = period_windows(store, days, period)
-    min_s = MIN_SESSIONS_ONE_DAY if period else MIN_SESSIONS
+    first, last, p_first, p_last, window_label, compare_label = period_windows(store, days, period, start, end)
+    min_s = MIN_SESSIONS_ONE_DAY if period or (custom and days < 7) else MIN_SESSIONS
     cur_w, prev_w = _since(first, last), _since(p_first, p_last)
     H = HUMAN_SESSIONS_FILTER
 
@@ -282,7 +298,7 @@ def fetch_landing_pages(store: models.Store, days: int = 28, period: str | None 
 
     result = {
         "days": days,
-        "period": period or f"last{days}",
+        "period": "custom" if custom else (period or f"last{days}"),
         "window_label": window_label,
         "compare_label": compare_label,
         "bounce_definition": "Shopify definition: a bounce is a visit that saw only one page. Bounce rate = bounces ÷ sessions. Bots excluded.",

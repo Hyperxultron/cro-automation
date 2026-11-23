@@ -103,36 +103,105 @@ function SplitTable({ rows, cur, prev, minSessions }: {
   );
 }
 
+/** 7-day rolling, session-weighted rate (smooths out noisy single days). */
+function rolling(daily: DeepData["daily"], key: "conversion_rate" | "bounce_rate" | "added_to_cart_rate", n = 7) {
+  return daily.map((_, i) => {
+    const win = daily.slice(Math.max(0, i - n + 1), i + 1);
+    const s = win.reduce((a, d) => a + (d.sessions || 0), 0);
+    if (!s || win.length < n) return null;
+    return Math.round((win.reduce((a, d) => a + (d[key] ?? 0) * (d.sessions || 0), 0) / s) * 100) / 100;
+  });
+}
+
+const niceMax = (vals: (number | null | undefined)[]) => {
+  const m = Math.max(0, ...vals.filter((v): v is number => v != null));
+  if (m <= 0) return 1;
+  const step = m < 2 ? 0.5 : m < 5 ? 1 : m < 20 ? 5 : 10;
+  return Math.ceil((m * 1.15) / step) * step;
+};
+
 function TrendChart({ daily }: { daily: DeepData["daily"] }) {
   const t = useOceanTheme();
-  const option = useMemo<EChartsOption>(() => ({
+  const dates = daily.map((d) => d.date.slice(5));
+  const axisX = {
+    type: "category" as const,
+    data: dates,
+    axisLine: { lineStyle: { color: t.axis } },
+    axisTick: { show: false },
+    axisLabel: { color: t.muted, fontSize: 10 },
+  };
+  const pctTip = (ps: unknown) => {
+    const arr = ps as { axisValue: string; seriesName: string; value: number | null; marker: string }[];
+    return `<b>${arr[0]?.axisValue}</b><br/>` + arr
+      .map((p) => `${p.marker}${p.seriesName}: <b>${p.value == null ? "—" : p.seriesName === "Sessions" ? Number(p.value).toLocaleString() : `${p.value}%`}</b>`)
+      .join("<br/>");
+  };
+
+  // Chart 1: sessions + conversion, conversion on its OWN axis scaled to its
+  // own range (0 - ~1.5%), so a 0.6% -> 0.9% move is clearly visible.
+  const cvr7 = useMemo(() => rolling(daily, "conversion_rate"), [daily]);
+  const convOption = useMemo<EChartsOption>(() => ({
     textStyle: { fontFamily: FONT },
     grid: { left: 8, right: 8, top: 36, bottom: 8, containLabel: true },
     legend: { top: 0, right: 0, textStyle: { color: t.muted, fontSize: 11 }, itemWidth: 10, itemHeight: 10 },
-    tooltip: { trigger: "axis", ...tipBase(t) },
-    xAxis: {
-      type: "category",
-      data: daily.map((d) => d.date.slice(5)),
-      axisLine: { lineStyle: { color: t.axis } },
-      axisTick: { show: false },
-      axisLabel: { color: t.muted, fontSize: 10 },
-    },
+    tooltip: { trigger: "axis", ...tipBase(t), formatter: pctTip },
+    xAxis: axisX,
     yAxis: [
-      { type: "value", axisLabel: { color: t.muted, fontSize: 11 }, splitLine: { lineStyle: { color: t.grid } } },
-      { type: "value", axisLabel: { color: t.muted, fontSize: 11, formatter: "{value}%" }, splitLine: { show: false } },
+      { type: "value", axisLabel: { color: t.muted, fontSize: 11 }, splitLine: { show: false } },
+      {
+        type: "value", min: 0,
+        max: niceMax(daily.map((d) => d.conversion_rate)),
+        axisLabel: { color: t.muted, fontSize: 11, formatter: "{value}%" }, splitLine: { lineStyle: { color: t.grid } },
+      },
     ],
     series: [
-      { name: "Sessions", type: "bar", data: daily.map((d) => d.sessions), barMaxWidth: 14, itemStyle: { color: t.seq[1], borderRadius: [3, 3, 0, 0] } },
-      { name: "Conversion %", type: "line", yAxisIndex: 1, data: daily.map((d) => d.conversion_rate), smooth: true, symbol: "none", lineStyle: { width: 2.5, color: t.main }, itemStyle: { color: t.main } },
-      { name: "Bounce %", type: "line", yAxisIndex: 1, data: daily.map((d) => d.bounce_rate), smooth: true, symbol: "none", lineStyle: { width: 2, color: t.mark, type: "dashed" }, itemStyle: { color: t.mark } },
-      { name: "Add to cart %", type: "line", yAxisIndex: 1, data: daily.map((d) => d.added_to_cart_rate), smooth: true, symbol: "none", lineStyle: { width: 2, color: t.cat[2] }, itemStyle: { color: t.cat[2] } },
+      { name: "Sessions", type: "bar", data: daily.map((d) => d.sessions), barMaxWidth: 14, itemStyle: { color: t.seq[0], borderRadius: [3, 3, 0, 0] } },
+      {
+        name: "Conversion % (daily)", type: "line", yAxisIndex: 1, data: daily.map((d) => d.conversion_rate),
+        symbol: "circle", symbolSize: 5, lineStyle: { width: 1.5, color: t.main, opacity: 0.55 }, itemStyle: { color: t.main },
+      },
+      {
+        name: "Conversion % (7-day avg)", type: "line", yAxisIndex: 1, data: cvr7, smooth: true, symbol: "none",
+        lineStyle: { width: 3.5, color: t.cat[4] }, itemStyle: { color: t.cat[4] },
+      },
     ],
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [daily, cvr7, t]);
+
+  // Chart 2: bounce and add-to-cart on their own scale.
+  const rateOption = useMemo<EChartsOption>(() => ({
+    textStyle: { fontFamily: FONT },
+    grid: { left: 8, right: 8, top: 36, bottom: 8, containLabel: true },
+    legend: { top: 0, right: 0, textStyle: { color: t.muted, fontSize: 11 }, itemWidth: 10, itemHeight: 10 },
+    tooltip: { trigger: "axis", ...tipBase(t), formatter: pctTip },
+    xAxis: axisX,
+    yAxis: [
+      { type: "value", scale: true, axisLabel: { color: t.mark, fontSize: 11, formatter: "{value}%" }, splitLine: { lineStyle: { color: t.grid } } },
+      { type: "value", min: 0, max: niceMax(daily.map((d) => d.added_to_cart_rate)), axisLabel: { color: t.cat[2], fontSize: 11, formatter: "{value}%" }, splitLine: { show: false } },
+    ],
+    series: [
+      { name: "Bounce % (left)", type: "line", data: daily.map((d) => d.bounce_rate), smooth: true, symbol: "none", lineStyle: { width: 2, color: t.mark }, itemStyle: { color: t.mark } },
+      { name: "Add to cart % (right)", type: "line", yAxisIndex: 1, data: daily.map((d) => d.added_to_cart_rate), smooth: true, symbol: "none", lineStyle: { width: 2, color: t.cat[2] }, itemStyle: { color: t.cat[2] } },
+    ],
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [daily, t]);
+
   if (daily.length === 0) return <p className="text-xs text-slate-400">No daily data for this page.</p>;
-  return <EChart option={option} height={260} />;
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="mb-1 text-xs font-semibold text-slate-600">Sessions &amp; conversion rate <span className="font-normal text-slate-400">(conversion has its own scale on the right)</span></p>
+        <EChart option={convOption} height={260} />
+      </div>
+      <div>
+        <p className="mb-1 text-xs font-semibold text-slate-600">Bounce &amp; add-to-cart rate <span className="font-normal text-slate-400">(each on its own scale)</span></p>
+        <EChart option={rateOption} height={180} />
+      </div>
+    </div>
+  );
 }
 
-function LandingDeepDive({ path, currency, onClose }: { path: string; currency: string | null; onClose: () => void }) {
+function LandingDeepDive({ path, currency, onClose, end = null }: { path: string; currency: string | null; onClose: () => void; end?: string | null }) {
   const [data, setData] = useState<DeepData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("wow");
@@ -141,13 +210,13 @@ function LandingDeepDive({ path, currency, onClose }: { path: string; currency: 
     let alive = true;
     setData(null);
     setError(null);
-    api.landingDeepDive(path)
+    api.landingDeepDive(path, end)
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError(e instanceof Error ? e.message : "Unable to load this page"));
     return () => {
       alive = false;
     };
-  }, [path]);
+  }, [path, end]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -268,7 +337,7 @@ function LandingDeepDive({ path, currency, onClose }: { path: string; currency: 
               </p>
             </Card>
 
-            <Card icon={<TrendingUp className="text-blue-500" size={18} />} title="Daily trend (last 60 days)" help="Sessions that landed on this page each day, with their conversion, add-to-cart and bounce rates.">
+            <Card icon={<TrendingUp className="text-blue-500" size={18} />} title="Daily trend (last 60 days)" help="Top chart: sessions (bars) and conversion rate on its own zoomed-in scale. Thin line = each day, thick pink line = 7-day average (smooths out noisy days). Bottom chart: bounce and add-to-cart rate.">
               <TrendChart daily={data.daily} />
             </Card>
 

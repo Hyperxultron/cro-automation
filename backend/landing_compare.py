@@ -47,8 +47,14 @@ WINDOWS = ("week", "prev_week", "month", "prev_month")
 
 # --------------------------------------------------------------------------- helpers
 
-def compare_windows(store: models.Store) -> dict[str, tuple[date, date]]:
+def _anchor(store: models.Store, end: date | None = None) -> date:
+    """Last day of every window: the picked end date, else yesterday (never today or later)."""
     y = datetime.now(_tz(store)).date() - timedelta(days=1)
+    return min(end, y) if end else y
+
+
+def compare_windows(store: models.Store, end: date | None = None) -> dict[str, tuple[date, date]]:
+    y = _anchor(store, end)
     return {
         "week": (y - timedelta(days=6), y),
         "prev_week": (y - timedelta(days=13), y - timedelta(days=7)),
@@ -121,15 +127,15 @@ def _parallel(store: models.Store, queries: dict[str, str]):
 
 # --------------------------------------------------------------------------- shared base
 
-def _base(store: models.Store) -> dict:
+def _base(store: models.Store, end: date | None = None) -> dict:
     """Per-page metrics for the 4 windows + sales, shared by the table and the deep dive."""
     today = datetime.now(_tz(store)).date().isoformat()
-    key = (store.store_url, today)
+    key = (store.store_url, today, _anchor(store, end).isoformat())
     hit = _base_cache.get(key)
     if hit and hit[0] > time.time():
         return hit[1]
 
-    w = compare_windows(store)
+    w = compare_windows(store, end)
     H = HUMAN_SESSIONS_FILTER
     queries = {}
     for name, (a, b) in w.items():
@@ -208,9 +214,9 @@ def _window_meta(w: dict) -> dict:
 
 # --------------------------------------------------------------------------- WoW / MoM table
 
-def fetch_landing_compare(store: models.Store) -> dict:
-    """Every landing page with this week vs last week and last 30 days vs the 30 before."""
-    base = _base(store)
+def fetch_landing_compare(store: models.Store, end: date | None = None) -> dict:
+    """Every landing page with this week vs last week and last 30 days vs the 30 before (ending on `end`)."""
+    base = _base(store, end)
     paths = set()
     for name in WINDOWS:
         paths.update(base["sessions"][name].keys())
@@ -233,6 +239,7 @@ def fetch_landing_compare(store: models.Store) -> dict:
 
     w = base["windows"]
     return {
+        "end": w["week"][1].isoformat(),
         "windows": _window_meta(w),
         "wow_label": f"{_label(*w['week'])} vs {_label(*w['prev_week'])}",
         "mom_label": f"{_label(*w['month'])} vs {_label(*w['prev_month'])}",
@@ -363,15 +370,15 @@ def _insights(m: dict, sources: list[dict], devices: list[dict]) -> list[dict]:
     return notes
 
 
-def fetch_landing_deep_dive(db: Session, store: models.Store, path: str) -> dict:
+def fetch_landing_deep_dive(db: Session, store: models.Store, path: str, end: date | None = None) -> dict:
     path = norm_path(path)
     today = datetime.now(_tz(store)).date().isoformat()
-    key = (store.store_url, path, today)
+    key = (store.store_url, path, today, _anchor(store, end).isoformat())
     hit = _deep_cache.get(key)
     if hit and hit[0] > time.time():
         return hit[1]
 
-    base = _base(store)
+    base = _base(store, end)
     w = base["windows"]
     raw = base["raw_path"].get(path, path)
     H = HUMAN_SESSIONS_FILTER
@@ -490,14 +497,14 @@ def _page_daily(store: models.Store, base: dict, path: str, first: date, last: d
     return val
 
 
-def fetch_landing_daily(store: models.Store, paths: list[str] | None, days: int = 30) -> dict:
+def fetch_landing_daily(store: models.Store, paths: list[str] | None, days: int = 30, end: date | None = None) -> dict:
     """
     Excel-style grid: one row per date, one column per landing page.
     paths None/empty -> the top pages by last-30-day sessions.
     """
-    base = _base(store)
+    base = _base(store, end)
     days = max(1, min(days, DAILY_DAYS))
-    last = datetime.now(_tz(store)).date() - timedelta(days=1)
+    last = _anchor(store, end)
     first60 = last - timedelta(days=DAILY_DAYS - 1)
     first = last - timedelta(days=days - 1)
 

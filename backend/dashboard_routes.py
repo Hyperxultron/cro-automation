@@ -570,17 +570,33 @@ def product_analytics(
     return fetch_product_analytics(db, store, days=days)
 
 
+def _picked_dates(start: date | None, end: date | None) -> tuple[date | None, date | None]:
+    """Calendar range for the Landing Pages page: both or neither, start <= end, max 1 year."""
+    if start is None and end is None:
+        return None, None
+    if start is None or end is None:
+        raise HTTPException(status_code=400, detail="Pick both a start and an end date.")
+    if start > end:
+        raise HTTPException(status_code=400, detail="Start date is after the end date.")
+    if (end - start).days > 365:
+        raise HTTPException(status_code=400, detail="Pick at most one year.")
+    return start, end
+
+
 @router.get("/landing-grids")
 def landing_grids(
     days: int = Query(28, ge=7, le=90),
     period: str | None = Query(None, pattern="^(today|yesterday)$"),
+    start: date | None = Query(None),
+    end: date | None = Query(None),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """Landing page x source and device x page type grids (checklist section 3, P2)."""
+    start, end = _picked_dates(start, end)
     store = _get_store(db, shop)
     try:
-        return fetch_landing_grids(store, days=days, period=period)
+        return fetch_landing_grids(store, days=days, period=period, start=start, end=end)
     except Exception as exc:
         logger.exception("Landing grids failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
@@ -590,13 +606,16 @@ def landing_grids(
 def landing_pages(
     days: int = Query(28, ge=7, le=90),
     period: str | None = Query(None, pattern="^(today|yesterday)$"),
+    start: date | None = Query(None),
+    end: date | None = Query(None),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """Landing pages, page types and bounce by source / device (checklist section 5)."""
+    start, end = _picked_dates(start, end)
     store = _get_store(db, shop)
     try:
-        return fetch_landing_pages(store, days=days, period=period)
+        return fetch_landing_pages(store, days=days, period=period, start=start, end=end)
     except Exception as exc:
         logger.exception("Landing pages failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
@@ -604,13 +623,14 @@ def landing_pages(
 
 @router.get("/landing-compare")
 def landing_compare(
+    end: date | None = Query(None, description="Last day of the windows (default yesterday)"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """Every landing page: this week vs last week (WoW) and last 30 days vs the 30 before (MoM)."""
     store = _get_store(db, shop)
     try:
-        return fetch_landing_compare(store)
+        return fetch_landing_compare(store, end=end)
     except Exception as exc:
         logger.exception("Landing compare failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
@@ -620,6 +640,7 @@ def landing_compare(
 def landing_daily(
     days: int = Query(30, ge=1, le=60),
     paths: str | None = Query(None, max_length=8000, description="Landing page paths, separated by |"),
+    end: date | None = Query(None, description="Last day of the grid (default yesterday)"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
@@ -627,7 +648,7 @@ def landing_daily(
     store = _get_store(db, shop)
     try:
         wanted = [p for p in (paths or "").split("|") if p.strip()]
-        return fetch_landing_daily(store, wanted or None, days=days)
+        return fetch_landing_daily(store, wanted or None, days=days, end=end)
     except Exception as exc:
         logger.exception("Landing daily failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
@@ -636,13 +657,14 @@ def landing_daily(
 @router.get("/landing-deep-dive")
 def landing_deep_dive(
     path: str = Query(..., min_length=1, max_length=500),
+    end: date | None = Query(None, description="Last day of the windows (default yesterday)"),
     shop: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """One landing page in depth: WoW / MoM metrics, daily trend, sources, devices, countries, Clarity views."""
     store = _get_store(db, shop)
     try:
-        return fetch_landing_deep_dive(db, store, path)
+        return fetch_landing_deep_dive(db, store, path, end=end)
     except Exception as exc:
         logger.exception("Landing deep dive failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")

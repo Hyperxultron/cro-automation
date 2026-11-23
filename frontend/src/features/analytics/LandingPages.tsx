@@ -3,8 +3,9 @@ import LandingGrids from "./LandingGrids";
 import LandingCompare from "./LandingCompare";
 import LandingDaily from "./LandingDaily";
 import LandingDeepDive from "./LandingDeepDive";
+import LandingDatePicker from "./LandingDatePicker";
 import { AlertTriangle, MonitorSmartphone, Route, Search, Share2 } from "lucide-react";
-import { api, type LandingRange, formatMoney, type DashboardSummary, type LandingPagesData, type LandingSplitRow } from "../../services/api";
+import { api, type LandingRange, type PickedDates, formatMoney, type DashboardSummary, type LandingPagesData, type LandingSplitRow } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
 import { ptsBoth } from "../../lib/change";
@@ -125,10 +126,11 @@ function LandingPages() {
   const [sort, setSort] = useState<SortKey>("sessions");
   const [showAll, setShowAll] = useState(false);
   const [deepPath, setDeepPath] = useState<string | null>(null);
+  const [dates, setDatesState] = useState<PickedDates | null>(null); // calendar range, overrides the buttons
 
   useEffect(() => {
     let alive = true;
-    Promise.all([api.summary().catch(() => null as DashboardSummary | null), api.landingPages(days)])
+    Promise.all([api.summary().catch(() => null as DashboardSummary | null), api.landingPages(days, dates)])
       .then(([s, d]) => {
         if (!alive) return;
         if (s) setCurrency(s.store.currency);
@@ -140,13 +142,21 @@ function LandingPages() {
     return () => {
       alive = false;
     };
-  }, [days]);
+  }, [days, dates]);
 
   const pickDays = (d: LandingRange) => {
-    if (d === days) return;
+    if (d === days && !dates) return;
     setLoading(true);
     setData(null); // never show the old range's numbers under the new button
+    setDatesState(null);
     setDays(d);
+  };
+
+  const setDates = (v: PickedDates | null) => {
+    if (v?.start === dates?.start && v?.end === dates?.end) return;
+    setLoading(true);
+    setData(null);
+    setDatesState(v);
   };
 
   const types = useMemo(() => Array.from(new Set((data?.pages ?? []).map((p) => p.page_type))).sort(), [data]);
@@ -190,17 +200,17 @@ function LandingPages() {
           <h2 className="text-2xl font-bold text-slate-900">Landing Pages &amp; Bounce<InfoTip text={`${data?.bounce_definition ?? ""} Pages with fewer than ${minSessions} sessions are marked "Too few sessions" because their rates jump around too much to judge.`} /></h2>
           <p className="mt-1 text-sm text-slate-500">
             {fixedWindow
-              ? "This tab uses its own fixed windows (complete days only)."
+              ? dates ? `This tab ends on your picked date (${dates.end}).` : "This tab uses its own fixed windows (complete days only). Pick dates to look at an older period."
               : data ? <>{data.window_label} · changes vs {data.compare_label}</> : "Where visitors land, which pages lose them, and which pages bring orders."}
           </p>
         </div>
-        <div className={`flex rounded-xl border bg-white p-1 text-sm ${fixedWindow ? "opacity-40" : ""}`} title={fixedWindow ? "Not used on this tab" : undefined}>
+        <div className={`flex rounded-xl border bg-white p-1 text-sm ${fixedWindow || dates ? "opacity-40" : ""}`} title={fixedWindow ? "Not used on this tab" : undefined}>
           {RANGES.map((r) => (
             <button
               key={r.key}
               onClick={() => pickDays(r.key)}
               disabled={fixedWindow}
-              className={`rounded-lg px-3 py-1.5 font-medium ${days === r.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+              className={`rounded-lg px-3 py-1.5 font-medium ${days === r.key && !dates ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
             >
               {r.label}
             </button>
@@ -210,7 +220,7 @@ function LandingPages() {
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       {loading && !data && (
-        <p className="text-sm text-slate-400">Loading {RANGES.find((r) => r.key === days)?.label ?? ""} from Shopify…</p>
+        <p className="text-sm text-slate-400">Loading {dates ? `${dates.start} to ${dates.end}` : RANGES.find((r) => r.key === days)?.label ?? ""} from Shopify…</p>
       )}
 
       {data && (
@@ -256,16 +266,19 @@ function LandingPages() {
           </div>
 
           {/* 3. Tabs, in priority order */}
-          <div className="sticky top-0 z-30 -mx-1 flex gap-1 overflow-x-auto rounded-xl border bg-white p-1 text-sm shadow-sm">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`whitespace-nowrap rounded-lg px-3 py-1.5 font-medium ${tab === t.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div className="sticky top-0 z-30 -mx-1 flex items-center gap-2 rounded-xl border bg-white p-1 text-sm shadow-sm">
+            <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+              {TABS.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 font-medium ${tab === t.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <LandingDatePicker value={dates} onChange={setDates} />
           </div>
 
           <div className={tab === "pages" ? "" : "hidden"}>
@@ -366,13 +379,13 @@ function LandingPages() {
 
           {seen.has("compare") && (
             <div className={tab === "compare" ? "" : "hidden"}>
-              <LandingCompare currency={currency} onOpen={setDeepPath} />
+              <LandingCompare currency={currency} onOpen={setDeepPath} end={dates?.end} />
             </div>
           )}
 
           {seen.has("daily") && (
             <div className={tab === "daily" ? "" : "hidden"}>
-              <LandingDaily currency={currency} onOpen={setDeepPath} />
+              <LandingDaily currency={currency} onOpen={setDeepPath} end={dates?.end} />
             </div>
           )}
 
@@ -386,7 +399,7 @@ function LandingPages() {
 
           {seen.has("grids") && (
             <div className={tab === "grids" ? "" : "hidden"}>
-              <LandingGrids range={days} />
+              <LandingGrids range={days} dates={dates} />
             </div>
           )}
 
@@ -398,7 +411,7 @@ function LandingPages() {
         </>
       )}
 
-      {deepPath && <LandingDeepDive path={deepPath} currency={currency} onClose={closeDeep} />}
+      {deepPath && <LandingDeepDive path={deepPath} currency={currency} onClose={closeDeep} end={dates?.end} />}
     </div>
   );
 }

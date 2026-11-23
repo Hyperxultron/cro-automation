@@ -44,7 +44,7 @@ function totalFor(days: LandingWindowMetrics[], key: MetricKey): number | null {
   return Math.round((w / s) * 100) / 100;
 }
 
-function LandingDaily({ currency, onOpen }: { currency: string | null; onOpen: (path: string) => void }) {
+function LandingDaily({ currency, onOpen, end = null }: { currency: string | null; onOpen: (path: string) => void; end?: string | null }) {
   const [days, setDays] = useState(30);
   const [metric, setMetric] = useState<MetricKey>("sessions");
   const [paths, setPaths] = useState<string[] | null>(null); // null = backend picks the top pages
@@ -55,7 +55,7 @@ function LandingDaily({ currency, onOpen }: { currency: string | null; onOpen: (
   const loadedKey = useRef<string | null>(null);
 
   useEffect(() => {
-    const key = `${days}|${(paths ?? []).join("|")}`;
+    const key = `${end}|${days}|${(paths ?? []).join("|")}`;
     if (paths != null && loadedKey.current === key) return; // already showing exactly this
     if (paths != null && paths.length === 0) {
       setData((d) => (d ? { ...d, pages: [] } : d));
@@ -64,13 +64,13 @@ function LandingDaily({ currency, onOpen }: { currency: string | null; onOpen: (
     }
     let alive = true;
     setLoading(true);
-    api.landingDaily(days, paths ?? undefined)
+    api.landingDaily(days, paths ?? undefined, end)
       .then((d) => {
         if (!alive) return;
         setData(d);
         setError(null);
         const got = d.pages.map((p) => p.path);
-        loadedKey.current = `${days}|${got.join("|")}`;
+        loadedKey.current = `${end}|${days}|${got.join("|")}`;
         if (paths == null) setPaths(got);
       })
       .catch((e) => alive && setError(e instanceof Error ? e.message : "Unable to load the date-wise grid"))
@@ -79,7 +79,7 @@ function LandingDaily({ currency, onOpen }: { currency: string | null; onOpen: (
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, paths?.join("|")]);
+  }, [end, days, paths?.join("|")]);
 
   const m = METRICS.find((x) => x.key === metric)!;
   const metrics = METRICS.filter((x) => !x.revenue || data?.revenue_available !== false);

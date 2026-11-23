@@ -80,15 +80,18 @@ def _grid(cells: dict, rows_order: list[str], cols_order: list[str], min_s: int)
     }
 
 
-def fetch_landing_grids(store: models.Store, days: int = 28, period: str | None = None) -> dict:
-    period = period if period in ("today", "yesterday") else None
-    first, last, _pf, _pl, window_label, _cl = period_windows(store, days, period)
-    key = (store.store_url, days, period, first.isoformat())
+def fetch_landing_grids(store: models.Store, days: int = 28, period: str | None = None, start=None, end=None) -> dict:
+    custom = start is not None and end is not None
+    period = period if period in ("today", "yesterday") and not custom else None
+    if custom:
+        days = (end - start).days + 1
+    first, last, _pf, _pl, window_label, _cl = period_windows(store, days, period, start, end)
+    key = (store.store_url, days, period, first.isoformat(), last.isoformat())
     hit = _cache.get(key)
     if hit and hit[0] > time.time():
         return hit[1]
 
-    min_s = MIN_SESSIONS_ONE_DAY if period else MIN_SESSIONS
+    min_s = MIN_SESSIONS_ONE_DAY if period or (custom and days < 7) else MIN_SESSIONS
     w = _since(first, last)
     H = HUMAN_SESSIONS_FILTER
     queries = {
@@ -122,7 +125,7 @@ def fetch_landing_grids(store: models.Store, days: int = 28, period: str | None 
 
     out = {
         "days": days,
-        "period": period or f"last{days}",
+        "period": "custom" if custom else (period or f"last{days}"),
         "window_label": window_label,
         "min_sessions": min_s,
         # cell min is lower than the page min: a grid splits traffic many ways

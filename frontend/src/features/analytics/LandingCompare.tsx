@@ -30,7 +30,7 @@ function diff(a: number | null | undefined, b: number | null | undefined) {
   return a == null || b == null ? null : a - b;
 }
 
-function LandingCompare({ currency, onOpen }: { currency: string | null; onOpen: (path: string) => void }) {
+function LandingCompare({ currency, onOpen, end = null }: { currency: string | null; onOpen: (path: string) => void; end?: string | null }) {
   const [data, setData] = useState<LandingCompareData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("wow");
@@ -41,13 +41,14 @@ function LandingCompare({ currency, onOpen }: { currency: string | null; onOpen:
 
   useEffect(() => {
     let alive = true;
-    api.landingCompare()
+    setData(null);
+    api.landingCompare(end)
       .then((d) => alive && (setData(d), setError(null)))
       .catch((e) => alive && setError(e instanceof Error ? e.message : "Unable to load the comparison"));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [end]);
 
   const cur = mode === "wow" ? "week" : "month";
   const prev = mode === "wow" ? "prev_week" : "prev_month";
