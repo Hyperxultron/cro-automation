@@ -57,7 +57,8 @@ EFFORT_WEIGHT = {"Low": 1.0, "Medium": 1.6, "High": 2.5}
 
 AREAS = (
     "Funnel", "Mobile", "Landing pages", "Traffic", "Products", "Checkout",
-    "Order value", "Retention", "Speed", "Search", "Geography", "Refunds",
+    "Product pages", "Trust & offers", "Delivery", "Order value", "Retention", "Speed", "Search",
+    "Geography", "Refunds",
 )
 
 
@@ -246,6 +247,18 @@ def gather(db: Session, store: models.Store, days: int, period: str | None) -> d
         from geo import fetch_geo
         return fetch_geo(store, period="yesterday" if period else "days", days=days)
 
+    def catalog():
+        from catalog_audit import fetch_catalog
+        return fetch_catalog(store)
+
+    def variant_sales():
+        from catalog_audit import fetch_variant_sales
+        return fetch_variant_sales(store, s_first, s_last)
+
+    def delivery():
+        from catalog_audit import fetch_delivery
+        return fetch_delivery(store)
+
     shopify_jobs = {
         "landing": landing,
         "funnel": lambda: _device_funnel(store, first, last),
@@ -254,6 +267,9 @@ def gather(db: Session, store: models.Store, days: int, period: str | None) -> d
         "money_struct": (lambda: _store_money(store, s_first, s_last)) if period else (lambda: None),
         "site": site,
         "geo": geo,
+        "catalog": catalog,
+        "variant_sales": variant_sales,
+        "delivery": delivery,
     }
 
     def cart():
@@ -881,6 +897,9 @@ def rule_products(b: _Builder):
                        _metric("Net sales", _money(p.get("revenue")))]
             if star:
                 metrics.append(_metric(f"Best in {p['category']}", f"{star['name'][:40]}", _pct(star.get("view_to_purchase_rate")), "view → purchase"))
+            cinfo = _catalog_by_title(ctx).get(p["name"].strip().lower())
+            if cinfo:
+                metrics += _content_metrics(cinfo)
             steps = ["Compare this page with the best seller in its category side by side: photos, title, price, reviews, description length.",
                      "Add/refresh photos: lifestyle shot first, then close-ups and a size/scale photo.",
                      "Show review stars and 3+ reviews; ask recent buyers for photo reviews.",
@@ -1369,7 +1388,431 @@ def rule_refunds_store(b: _Builder):
     )
 
 
+# ---------------------------------------------------------------------------
+# product pages, stock, sizes, offers, delivery (catalog audit) and the live
+# site review
+# ---------------------------------------------------------------------------
+
+def _catalog_by_title(ctx: dict) -> dict[str, dict]:
+    return {c["title"].strip().lower(): c for c in ctx.get("catalog") or []}
+
+
+def _content_issues(c: dict, price: float | None) -> list[str]:
+    issues = []
+    if c["images"] <= 2:
+        issues.append(f"only {c['images']} photo{'s' if c['images'] != 1 else ''}")
+    if c["words"] < 80:
+        issues.append(f"description is {c['words']} words")
+    if c.get("review_count") is not None and c["review_count"] < 5:
+        issues.append(f"{c['review_count']} reviews")
+    if c.get("rating") is not None and c["rating"] < 4.4 and (c.get("review_count") or 0) >= 5:
+        issues.append(f"rating {c['rating']:.1f}")
+    if not c["videos"] and (price or 0) >= 80:
+        issues.append("no video")
+    if not c["product_type"]:
+        issues.append("no product type (hurts search filters)")
+    return issues
+
+
+def _content_metrics(c: dict) -> list[dict]:
+    out = [_metric("Photos on the page", str(c["images"]), "6+", "good practice", None, c["images"] <= 2),
+           _metric("Description length", f"{c['words']} words", "120+", "good practice", None, c["words"] < 80)]
+    if c.get("review_count") is not None:
+        out.append(_metric("Reviews", str(c["review_count"]) + (f" (avg {c['rating']:.1f}★)" if c.get("rating") else ""),
+                           "10+", "to look trusted", None, c["review_count"] < 5))
+    out.append(_metric("Video", "yes" if c["videos"] else "no"))
+    return out
+
+
+def rule_product_pages(b: _Builder):
+    """Busy / best-selling product pages with weak content, named one by one."""
+    ctx = b.ctx
+    cat = _catalog_by_title(ctx)
+    prod = ctx.get("products") or {}
+    if not cat or not prod.get("products"):
+        return
+    leaky = {p["name"] for p in prod.get("fix_first") or []}
+    views_ok = bool(prod.get("views_available"))
+    vdays = max(prod.get("views_days") or 1, 1)
+    pdays = min(max(ctx["struct_days"], 7), 60)
+    ranked = sorted(prod["products"], key=lambda p: -((p.get("views") or 0) * (p.get("price") or 0) if views_ok else p.get("revenue") or 0))
+    found = 0
+    for p in ranked[:40]:
+        c = cat.get(p["name"].strip().lower())
+        if not c or p["name"] in leaky:
+            continue
+        issues = _content_issues(c, p.get("price"))
+        if len(issues) < 2:
+            continue
+        found += 1
+        rev = p.get("revenue") or 0
+        if views_ok and p.get("views"):
+            impact = p["views"] * (p.get("view_to_purchase_rate") or 0) / 100 * (p.get("price") or 0) * 0.10
+            formula = f"{p['views']:,} views × {_pct(p.get('view_to_purchase_rate'))} buy × {_money(p.get('price'))} × 10% lift"
+            wd, wl = vdays, prod.get("views_window_label")
+        else:
+            impact = rev * 0.10
+            formula = f"{_money(rev)} sales × 10% lift"
+            wd, wl = pdays, prod.get("window_label")
+        metrics = []
+        if p.get("views"):
+            metrics.append(_metric("Product page views", f"{p['views']:,}"))
+        if p.get("view_to_purchase_rate") is not None:
+            metrics.append(_metric("View → purchase", _pct(p["view_to_purchase_rate"]), _pct(p.get("category_rate")), f"{p['category']} average"))
+        metrics.append(_metric("Net sales", _money(rev)))
+        metrics += _content_metrics(c)
+        steps = []
+        if c["images"] <= 2:
+            steps.append(f"Shoot {6 - c['images']} more photos: on a bed/table in a real room, close-up of the block print, folded stack, size-scale shot (with a person or furniture), and the back/border.")
+        if c["words"] < 80:
+            steps.append("Rewrite the description: 3 benefit bullets, exact dimensions per size, fabric/GSM, care, and 'what's in the box'.")
+        if c.get("review_count") is not None and c["review_count"] < 5:
+            steps.append("Email the last 60 days of buyers of this product for a photo review (offer 10% off next order); pin the best photo review under the title.")
+        if not c["videos"] and (p.get("price") or 0) >= 80:
+            steps.append("Add a 10-15s vertical video (unfolding / on the bed) as the 2nd gallery item.")
+        if not c["product_type"]:
+            steps.append("Set the product type so it shows up in collection filters and search.")
+        b.add(
+            key=f"product_page:{p['name']}", kind="product_page", area="Product pages", action="fix",
+            title=f"Upgrade the '{p['name']}' page: " + ", ".join(issues[:3]),
+            segment=f"Product · {p['category']}", page="Product Analytics", page_path=f"/products/{c['handle']}",
+            diagnosis=(f"This is one of your most important products ({_money(rev)} sales"
+                       + (f", {p['views']:,} page views" if p.get("views") else "") + ") but its page is thin: "
+                       + ", ".join(issues) + ". Buyers of $" + f"{(p.get('price') or 0):.0f}"
+                       + " home textiles want to see texture, scale and proof before they add to cart."),
+            metrics=metrics,
+            causes=["Shoppers can't judge size, texture and colour from the current photos/text.",
+                    "Too little social proof on the page itself."],
+            steps=steps,
+            test=test_plan(f"A fuller page (photos, dimensions, reviews) lifts '{p['name']}' view-to-purchase by 15%.",
+                           "Conversion rate (this page)", p.get("view_to_purchase_rate"), 0.15,
+                           (p.get("views") or 0) / vdays if p.get("views") else None),
+            impact=impact, formula=formula,
+            assumption="Assumes a 10% lift in this product's sales from a complete page (conservative).",
+            window_days=wd, window_label=wl, confidence="Medium" if (p.get("views") or rev) else "Low", effort="Medium",
+        )
+        if found >= 6:
+            break
+
+    # Catalogue-wide content gaps among products that actually sell.
+    selling = [cat[p["name"].strip().lower()] for p in prod["products"]
+               if (p.get("revenue") or 0) > 0 and p["name"].strip().lower() in cat]
+    if len(selling) >= 20:
+        few = [c for c in selling if c["images"] <= 2]
+        thin = [c for c in selling if c["words"] < 60]
+        no_rev = [c for c in selling if c.get("review_count") is not None and c["review_count"] == 0]
+        if len(few) + len(thin) + len(no_rev) >= max(5, len(selling) * 0.15):
+            metrics = [_metric("Selling products with ≤2 photos", f"{len(few)} of {len(selling)}", None, None, None, bool(few)),
+                       _metric("Selling products with <60-word descriptions", f"{len(thin)} of {len(selling)}", None, None, None, bool(thin))]
+            if any(c.get("review_count") is not None for c in selling):
+                metrics.append(_metric("Selling products with 0 reviews", f"{len(no_rev)} of {len(selling)}", None, None, None, bool(no_rev)))
+            names = ", ".join(c["title"] for c in few[:6])
+            b.add(
+                key="catalog_content", kind="catalog_content", area="Product pages", action="fix",
+                title=f"{len(few)} selling products have 2 photos or fewer, {len(thin)} have thin descriptions",
+                segment="Catalogue · content", page="Product Analytics",
+                diagnosis="Across products that sold in this window, many pages miss the basics buyers use to decide. Fixing them in a batch (one shoot, one copy template) is cheaper than page by page.",
+                metrics=metrics,
+                causes=["Products were listed quickly with a single studio/lifestyle shot.", "No content template for new listings."],
+                steps=[(f"Start with: {names}." if names else "Start with the best sellers in the list."),
+                       "Create one listing template: 6 photos (room, close-up, scale, folded, detail, back), dimensions table per size, fabric/care, 3 benefit bullets.",
+                       "Turn on an automatic review-request email 10 days after delivery (Judge.me) with a photo-review incentive.",
+                       "Make 'ready to publish' require the template for every new product."],
+                test=None, impact=None, formula="Not estimated: covered product by product in the items above.",
+                window_days=pdays, window_label=prod.get("window_label"), confidence="Medium", effort="Medium",
+            )
+
+
+def rule_stock(b: _Builder):
+    """Best-selling variants about to run out (or already out)."""
+    ctx = b.ctx
+    cat, vs = _catalog_by_title(ctx), ctx.get("variant_sales") or {}
+    if not cat or not vs:
+        return
+    days = ctx["struct_days"]
+    risks = []
+    for title, variants in vs.items():
+        c = cat.get(title.strip().lower())
+        if not c or not c["tracks_inventory"]:
+            continue
+        for v in c["variants"]:
+            sold = variants.get(v["title"]) or (variants.get("Default Title") if len(c["variants"]) == 1 else None)
+            if not sold or v.get("inventory") is None:
+                continue
+            per_day = sold / days
+            if per_day < 0.1:
+                continue
+            inv = max(v["inventory"], 0)
+            cover = inv / per_day if per_day else None
+            if inv == 0 or (cover is not None and cover < 21):
+                lost_days = max(0.0, 30 - (cover or 0))
+                risks.append((per_day * lost_days * (v.get("price") or 0), title, v, sold, per_day, inv, cover))
+    risks.sort(key=lambda x: -x[0])
+    for value, title, v, sold, per_day, inv, cover in risks[:5]:
+        out = inv == 0
+        b.add(
+            key=f"stock:{title}|{v['title']}", kind="stock", area="Products", action="fix",
+            title=(f"'{title}' ({v['title']}) is out of stock - it sold {sold} in {days} days" if out else
+                   f"Restock '{title}' ({v['title']}): {inv} left, ~{cover:.0f} days of stock"),
+            segment=f"Product · {title}", page="Product Analytics",
+            diagnosis=(f"This variant sells ~{per_day:.1f} a day. " + ("Every day it stays out of stock loses those sales, and the visitors who wanted it often leave instead of picking another size."
+                       if out else f"At that pace it runs out in about {cover:.0f} days - reorder now so it never shows 'Sold out'.")),
+            metrics=[_metric("Units sold", f"{sold} in {days} days ({per_day:.1f}/day)"),
+                     _metric("In stock", str(inv), None, None, None, True),
+                     _metric("Days of stock left", "0" if out else f"{cover:.0f}", "21+", "safe level", None, True),
+                     _metric("Price", _money(v.get("price")))],
+            causes=["Reorder point not set for best-selling sizes."],
+            steps=["Place the reorder / production run today; set a reorder alert at 21 days of cover.",
+                   ("Until it's back: turn on 'Notify me when available' and show the restock date on the page." if out else
+                    "Keep it out of paid ads only if cover falls under 7 days."),
+                   "Check the same design in other sizes and matching items (pillow covers, napkins) for the same risk."],
+            test=None,
+            impact=value * CLOSE_GAP,
+            formula=f"{per_day:.1f}/day × {max(0.0, 30 - (cover or 0)):.0f} days without stock in the next month × {_money(v.get('price'))} × 50%",
+            assumption="Assumes half the buyers would not switch to another size or product.",
+            window_days=30, window_label="next 30 days", confidence="High" if sold >= 20 else "Medium", effort="Low",
+        )
+
+
+def rule_size_price(b: _Builder):
+    """Cards show the cheapest size; most buyers pick a pricier one -> sticker shock."""
+    ctx = b.ctx
+    cat, vs = _catalog_by_title(ctx), ctx.get("variant_sales") or {}
+    if not cat or not vs:
+        return
+    rows = []
+    for title, variants in vs.items():
+        c = cat.get(title.strip().lower())
+        if not c or len(c["variants"]) < 2 or sum(variants.values()) < 5:
+            continue
+        first = c["variants"][0]
+        top_title, top_n = max(variants.items(), key=lambda kv: kv[1])
+        top = next((v for v in c["variants"] if v["title"] == top_title), None)
+        if not top or not first.get("price") or not top.get("price") or top["title"] == first["title"]:
+            continue
+        jump = (top["price"] - first["price"]) / first["price"] * 100
+        if jump >= 25:
+            rows.append((top_n, title, first, top, jump, top_n / sum(variants.values()) * 100))
+    if len(rows) < 3:
+        return
+    rows.sort(key=lambda r: -r[0])
+    ex = rows[0]
+    min_jump = min(r[4] for r in rows)
+    b.add(
+        key="size_price_jump", kind="size_price_jump", area="Product pages", action="test",
+        title=(f"On {len(rows)} best sellers the size people buy costs {min_jump:.0f}%+ more than the price on the card "
+               f"(e.g. '{ex[1]}': {ex[2]['title']} {_money(ex[2]['price'])} vs {ex[3]['title']} {_money(ex[3]['price'])})"),
+        segment="Catalogue · size pricing", page="Product Analytics",
+        diagnosis=("Collection cards and the product page open on the smallest size, so the first price a shopper sees is the lowest. "
+                   "Most buyers then pick a bigger size and the price jumps - a classic add-to-cart drop-off point."),
+        metrics=[_metric(r[1][:40], f"{r[2]['title'].split(' -')[0]} {_money(r[2]['price'])}",
+                         f"{r[3]['title'].split(' -')[0]} {_money(r[3]['price'])}", f"bought most ({r[5]:.0f}% of units)",
+                         f"+{r[4]:.0f}%", True) for r in rows[:6]],
+        causes=["The default (first) variant is the cheapest, not the most popular.",
+                "Card price doesn't say 'From'."],
+        steps=["Make the most-bought size the default selected variant on these products (move it to position 1 or preselect it in the theme).",
+               "Show 'From $X' on collection cards and a size-price list ('Twin $X · Queen $Y · King $Z') under the title.",
+               "Show the extra 10% / bundle saving on the size they pick, so the bigger number comes with a reason."],
+        test=test_plan("Defaulting to the most-bought size (with 'From' pricing on cards) keeps add-to-cart flat and lifts AOV 5%.",
+                       "Average order value", None, 0.05, None, "aov"),
+        impact=None, formula="Not estimated: measure add-to-cart rate and AOV before/after.",
+        window_days=ctx["struct_days"], window_label=ctx["struct_label"], confidence="Medium", effort="Low",
+    )
+
+
+def rule_offers(b: _Builder):
+    """Permanent 'sale' prices on almost everything erode trust."""
+    ctx = b.ctx
+    cat = ctx.get("catalog") or []
+    if len(cat) < 20:
+        return
+    disc = []
+    for c in cat:
+        v = c["variants"][0] if c["variants"] else None
+        if v and v.get("compare_at") and v.get("price") and v["compare_at"] > v["price"]:
+            disc.append((v["compare_at"] - v["price"]) / v["compare_at"] * 100)
+    share = len(disc) / len(cat) * 100
+    if share < 70:
+        return
+    med = sorted(disc)[len(disc) // 2]
+    b.add(
+        key="offers_always_on_sale", kind="offers", area="Trust & offers", action="test",
+        title=f"{share:.0f}% of products are permanently 'on sale' (median {med:.0f}% off) - the discount no longer persuades",
+        segment="Catalogue · compare-at prices", page="Overview",
+        diagnosis=(f"{len(disc)} of {len(cat)} active products show a crossed-out price, median {med:.0f}% off, on top of site-wide "
+                   "extra-% offers, bundle offers and countdown timers. When everything is always 50% off, shoppers stop believing the "
+                   "'regular' price and wait for the next deal; in the US, permanent 'was' prices and resetting timers can also break FTC pricing rules."),
+        metrics=[_metric("Products with a compare-at price", f"{share:.0f}%", None, None, None, True),
+                 _metric("Median discount shown", f"{med:.0f}%")],
+        causes=["Compare-at prices set once at launch and never removed.", "Several offers stacked on the same page."],
+        steps=["Pick ONE offer message per season (e.g. 'Black Friday: extra 10% on quilts') and remove the others from the same page.",
+               "Remove countdown timers that reset on reload; only show a timer for a real end date.",
+               "Test removing compare-at prices on one collection (e.g. napkins) for 2 weeks and compare conversion and AOV.",
+               "Use the saving story you can defend: 'handmade in Jaipur, direct from the makers'."],
+        test=test_plan("Honest pricing (no permanent compare-at, one clear offer) keeps conversion within 5% and raises full-price share.",
+                       "Conversion rate", ctx.get("store_cvr"), 0.10, ctx.get("daily_sessions")),
+        impact=None, formula="Not estimated: protects margin and trust; measure conversion and discount spend.",
+        window_days=ctx["struct_days"], window_label="current catalogue", confidence="Medium", effort="Low",
+    )
+
+
+def rule_delivery(b: _Builder):
+    ctx = b.ctx
+    d = ctx.get("delivery")
+    if not d or (d.get("deliver_orders") or 0) < 20 or d.get("deliver_p75") is None:
+        return
+    if d["deliver_p75"] <= 10:
+        return
+    aov = ctx["aov_calc"]
+    fun = ctx.get("funnel_total")
+    impact = fun["purchase"] * 0.03 * aov if fun and aov else None
+    b.add(
+        key="delivery_promise", kind="delivery", area="Delivery", action="fix",
+        title=(f"Half of orders take {d['deliver_median']:.0f}+ days to arrive ({d['deliver_over_21_share']}% over 3 weeks) "
+               "- the delivery promise doesn't match"),
+        segment=f"Orders · delivery ({d['deliver_scope']})", page="Overview",
+        diagnosis=(f"For {d['deliver_orders']:,} delivered {d['deliver_scope']} ({d['window_label']}): median {d['deliver_median']} days, "
+                   f"75% within {d['deliver_p75']} days, 90% within {d['deliver_p90']} days. Orders wait a median {d['ship_median']} days "
+                   "before they even ship. Slow delivery that isn't stated up front shows up later as 'took 6 weeks' reviews, "
+                   "refund requests and lower repeat purchase."),
+        metrics=[_metric("Order → delivered (median)", f"{d['deliver_median']} days"),
+                 _metric("Order → delivered (75%)", f"{d['deliver_p75']} days", "≤10 days", "what the site promises", None, True),
+                 _metric("Delivered after 3 weeks", f"{d['deliver_over_21_share']}%", None, None, None, (d.get("deliver_over_21_share") or 0) > 10),
+                 _metric("Order → shipped (median / 90%)", f"{d['ship_median']} / {d['ship_p90']} days"),
+                 _metric("Still not shipped after 14 days", f"{d['unfulfilled_after_14d']} of {d['orders']}")],
+        causes=["Made-to-order / international shipping time isn't shown before purchase.",
+                "Processing time before dispatch is long."],
+        steps=[f"Show an honest 'Arrives by <date>' (today + {int(round(d['deliver_p75']))} days) right under Add to cart and in the cart.",
+               "Change the header promise ('Free Shipping 3-10 days US') to the real range, or ship best sellers from US stock so it becomes true.",
+               "Keep a US buffer stock of the top 20 variants (see stock items) to cut delivery to under a week.",
+               "Send a 'your order is being handmade' email with tracking ETA on day 2 to cut 'where is my order' tickets and refunds."],
+        test=None, impact=impact,
+        formula=(f"{fun['purchase']:,} orders × 3% fewer refunds/lost repeat × {_money(aov)} AOV" if impact else "Not estimated."),
+        assumption="Assumes clear delivery dates and faster shipping protect ~3% of orders (refunds, cancellations, repeat).",
+        window_days=ctx["window_days"], confidence="High" if d["deliver_orders"] >= 200 else "Medium", effort="High",
+    )
+
+
+# Findings from a hands-on review of ridhiblockprint.com (mobile 375px,
+# 23 Nov 2026). Each one carries the observed fact and a size estimate from
+# the store's live numbers. Update or remove an item once it's fixed.
+SITE_REVIEW_DATE = "23 Nov 2026"
+
+
+def rule_site_review(b: _Builder):
+    ctx = b.ctx
+    aov, fun = ctx["aov_calc"], ctx.get("funnel_total")
+    mob = (ctx.get("funnel") or {}).get("Mobile")
+    wl = f"site review {SITE_REVIEW_DATE} + {ctx['window_label']}"
+    if mob and aov:
+        atc = _rate(mob["cart"], mob["sessions"])
+        down = _rate(mob["purchase"], mob["cart"])
+        b.add(
+            key="site:pdp_mobile_atc", kind="site_review", area="Product pages", action="fix",
+            title="On mobile, Add to cart is 2 screens down on product pages and there's no sticky button",
+            segment="Live site · product page · mobile", page="Conversion Analytics",
+            diagnosis=("On the Dark Salmon Pink Quilt page (a best seller) at phone size, the Add to cart button sits ~1,640px down - "
+                       "below the gallery, a '50,000+ customers' badge, the title, size picker, a bundle box and a countdown. "
+                       "There is no sticky Add to cart and no Shop Pay / Apple Pay button on the page. "
+                       f"Mobile add-to-cart is {_pct(atc)} on {mob['sessions']:,} sessions."),
+            metrics=[_metric("Add to cart position (mobile)", "≈1,640px (2 screens)", "< 812px", "first screen", None, True),
+                     _metric("Sticky Add to cart", "No", None, None, None, True),
+                     _metric("Express pay on product page", "No", None, None, None, True),
+                     _metric("Mobile add-to-cart rate", _pct(atc))],
+            causes=["Badges, bundle box and timer push the buy button down.", "Gallery thumbnails 3-4 load blank at first view."],
+            steps=["Add a sticky bottom bar on mobile product pages: size + price + ADD TO CART (appears after the gallery scrolls away).",
+                   "Order the first screen: image → title + product rating → price → size buttons → Add to cart. Move the '50,000+ customers' badge and the bundle box below the button.",
+                   "Turn on the dynamic checkout button (Shop Pay / Apple Pay) under Add to cart.",
+                   "Don't lazy-load the first 4 gallery thumbnails."],
+            test=test_plan("A sticky mobile Add to cart lifts mobile add-to-cart rate by 8%.", "Mobile add-to-cart rate", atc, 0.08,
+                           mob["sessions"] / ctx["window_days"], "added_to_cart_rate"),
+            impact=mob["cart"] * 0.08 * (down or 0) / 100 * aov,
+            formula=f"{mob['cart']:,} mobile carts × 8% more × {_pct(down, 1)} cart → order × {_money(aov)} AOV",
+            assumption="Assumes +8% mobile add-to-cart, a typical result for sticky buy buttons.",
+            window_days=ctx["window_days"], window_label=wl, confidence="Medium", effort="Low",
+        )
+    if fun and aov:
+        c2c = _rate(fun["checkout"], fun["cart"])
+        down = _rate(fun["purchase"], fun["checkout"])
+        b.add(
+            key="site:cart_page", kind="site_review", area="Checkout", action="fix",
+            title="Cart page: the Checkout button is under a shipping calculator - and shipping is free anyway",
+            segment="Live site · cart · mobile", page="Cart & Checkout",
+            diagnosis=("On mobile the cart shows 'You got free shipping', then a full 'Get estimate shipping' form (country, state, ZIP), "
+                       "and only then CHECKOUT at ~1,450px. The free-shipping bar is always full because everything ships free, "
+                       "and the recommended-products block below has the placeholder title 'Heading'. "
+                       f"Cart → checkout is {_pct(c2c)}."),
+            metrics=[_metric("Checkout button position (mobile)", "≈1,450px", "< 812px", "first screen", None, True),
+                     _metric("Shipping estimator", "Shown (shipping is free)", None, None, None, True),
+                     _metric("Cart → checkout", _pct(c2c)),
+                     _metric("Upsell block title", "'Heading' (placeholder)", None, None, None, True)],
+            causes=["A theme section that isn't needed for a free-shipping store.", "Unfinished upsell section."],
+            steps=["Remove the shipping estimator from the cart page and drawer.",
+                   "Put subtotal, the applied 'extra 10%' saving, CHECKOUT and express-pay buttons right after the items.",
+                   "Replace the always-full free-shipping bar with a bundle nudge: 'Add the matching pillow cover - save 10%'.",
+                   "Rename 'Heading' to 'Complete the set' and show items matching the cart's print."],
+            test=test_plan("Moving Checkout + express pay to the first screen of the cart lifts cart → checkout by 5%.",
+                           "Cart-to-checkout rate", c2c, 0.05, fun["cart"] / ctx["window_days"]),
+            impact=fun["cart"] * 0.05 * (c2c or 0) / 100 * (down or 0) / 100 * aov,
+            formula=f"{fun['cart']:,} carts × {_pct(c2c, 1)} reach checkout × 5% more × {_pct(down, 1)} complete × {_money(aov)} AOV",
+            assumption="Assumes +5% cart-to-checkout.",
+            window_days=ctx["window_days"], window_label=wl, confidence="Medium", effort="Low",
+        )
+    b.add(
+        key="site:offer_clutter", kind="site_review", area="Trust & offers", action="test",
+        title="Three offers and two different countdowns on the same journey - pick one clear deal",
+        segment="Live site · offers", page="Overview",
+        diagnosis=("Collection page: 'Pre Black Friday, extra 10% on Quilts, ends in 00h 31m'. Product page: 47% off, a 'Bundle & save 51%' "
+                   "box and 'Hurry! Offer expires in 14:52'. Cart: an automatic HOLIDAY10% line. The two timers show different end "
+                   "times, and the product page never mentions the extra 10% that the cart then applies."),
+        metrics=[_metric("Offers seen before checkout", "47% off + extra 10% + bundle 51%", None, None, None, True),
+                 _metric("Countdown timers", "2, with different end times", None, None, None, True)],
+        causes=["Offers added by different apps/campaigns over time."],
+        steps=["Show the extra 10% on the product page price ('$97.99 → $88.19 in cart') so the deal is visible before Add to cart.",
+               "Keep one timer tied to the real sale end date (e.g. Black Friday end) everywhere, or none.",
+               "Keep the bundle box but collapse it under Add to cart."],
+        test=test_plan("Showing the cart discount on the product page lifts add-to-cart by 5%.", "Add-to-cart rate", ctx.get("store_atc"), 0.05,
+                       ctx.get("daily_sessions"), "added_to_cart_rate"),
+        impact=None, formula="Not estimated.", window_days=ctx["window_days"], window_label=wl, confidence="Medium", effort="Low",
+    )
+    b.add(
+        key="site:reviews_on_pdp", kind="site_review", area="Product pages", action="fix",
+        title="Product pages show the store's 4.9★, not the product's own rating, and feature a '6-7 weeks to arrive' review",
+        segment="Live site · reviews", page="Product Analytics",
+        diagnosis=("Under the title the quilt page shows '4.9/5 Ridhi customer rating' (store-wide). The product's own score (4.6★, "
+                   "16 reviews, 13% 2-star) is far down the page, and the featured reviews there are for other products - one says "
+                   "'took about 6-7 weeks to receive'. Best sellers have only 3-16 reviews each against 2,196 for the store."),
+        metrics=[_metric("Rating shown at top", "Store 4.9★ (2,196)", "Product 4.6★ (16)", "actual product", None, True),
+                 _metric("Reviews per best seller", "3-16", "30+", "to look established", None, True)],
+        causes=["Review widget set to store-wide carousel.", "No systematic review requests per product."],
+        steps=["Show the product's own stars + count under the title (link to reviews); keep the store rating as a small badge.",
+               "Filter the featured reviews on a product page to that product (or same category), 4★+ with photos first.",
+               "Send review requests 10 days after DELIVERY (not after order), with a photo incentive, starting with best sellers."],
+        test=None, impact=None, formula="Not estimated.",
+        window_days=ctx["window_days"], window_label=wl, confidence="Medium", effort="Low",
+    )
+    b.add(
+        key="site:third_party_scripts", kind="site_review", area="Speed", action="fix",
+        title="Collection pages load 480+ files from 34 different servers - trim apps and trackers",
+        segment="Live site · page weight", page="Site Health",
+        diagnosis=("The Quilts collection page made ~486 network requests to 34 hosts: Trustpilot and Judge.me (two review apps), "
+                   "Klaviyo, Clarity, Bing, Facebook, Google Tag Manager, a chat widget and more, plus 195 script tags on the home page. "
+                   "Each one costs mobile load time and tap responsiveness."),
+        metrics=[_metric("Network requests (collection page)", "≈486", None, None, None, True),
+                 _metric("Third-party hosts", "34", None, None, None, True),
+                 _metric("Review apps loaded", "2 (Trustpilot + Judge.me)", "1", None, None, True)],
+        causes=["Apps added over time, old ones not removed.", "Trackers loaded directly instead of through one tag manager."],
+        steps=["Keep one review app (Judge.me holds the product reviews) and remove Trustpilot's scripts, or load it only on the home page.",
+               "Move Bing/Facebook/other pixels into Google Tag Manager or Shopify Customer Events and load them after interaction.",
+               "Load the chat widget only after a user tap or 10 seconds.",
+               "Re-check mobile LCP/INP on Site Health a week later."],
+        test=None, impact=None, formula="Not estimated: see the Speed item for the size of the prize.",
+        window_days=ctx["window_days"], window_label=wl, confidence="Medium", effort="Medium",
+    )
+
+
 RULES = [rule_funnel, rule_mobile, rule_landing, rule_sources, rule_cvr_drop, rule_payments, rule_products,
+         rule_product_pages, rule_stock, rule_size_price, rule_offers, rule_delivery, rule_site_review,
          rule_order_value, rule_retention, rule_speed, rule_search, rule_geo, rule_refunds_store]
 
 
@@ -1421,6 +1864,10 @@ def _coverage(ctx: dict) -> list[dict]:
         {"source": "Product sales & refunds", "ok": bool(prod.get("products"))},
         {"source": "Orders: codes, bundles, customers", "ok": bool(deeper.get("discounts"))},
         {"source": "New vs returning", "ok": bool(deeper.get("new_vs_returning"))},
+        {"source": "Product pages: photos, text, reviews, stock", "ok": bool(ctx.get("catalog"))},
+        {"source": "Sizes sold", "ok": bool(ctx.get("variant_sales"))},
+        {"source": "Delivery times", "ok": bool(ctx.get("delivery"))},
+        {"source": f"Live site review ({SITE_REVIEW_DATE})", "ok": True},
     ]
 
 
@@ -1446,11 +1893,14 @@ def run_rules(ctx: dict) -> tuple[list[dict], list[str]]:
         if r["key"] not in seen:
             seen.add(r["key"])
             recs.append(r)
+    est = sorted(r["monthly_impact"] for r in recs if r["monthly_impact"])
+    fallback = est[len(est) // 2] * 0.5 if est else 50.0
     for r in recs:
         base = r["monthly_impact"] or 0
         if not base:
-            # No money estimate: rank after the estimated items of similar weight.
-            base = 50.0 if r["confidence"] != "Low" else 20.0
+            # No money estimate: rank like a mid-sized item (half the median
+            # estimate), so trust / content fixes don't sink to the bottom.
+            base = fallback
         r["priority_score"] = round(base * CONF_WEIGHT[r["confidence"]] / EFFORT_WEIGHT[r["effort"]], 1)
     recs.sort(key=lambda r: -r["priority_score"])
     for i, r in enumerate(recs, 1):
