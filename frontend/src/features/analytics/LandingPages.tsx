@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import LandingGrids from "./LandingGrids";
+import LandingCompare from "./LandingCompare";
+import LandingDeepDive from "./LandingDeepDive";
 import { AlertTriangle, Info, MonitorSmartphone, Route, Search, Share2 } from "lucide-react";
 import { api, type LandingRange, formatMoney, type DashboardSummary, type LandingPagesData, type LandingSplitRow } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
@@ -109,6 +111,7 @@ function LandingPages() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("sessions");
   const [showAll, setShowAll] = useState(false);
+  const [deepPath, setDeepPath] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -145,6 +148,7 @@ function LandingPages() {
   }, [data, typeFilter, flaggedOnly, search, sort]);
 
   const visible = showAll ? rows : rows.slice(0, 25);
+  const closeDeep = useCallback(() => setDeepPath(null), []);
   const minSessions = data?.min_sessions ?? 100;
 
   return (
@@ -256,7 +260,7 @@ function LandingPages() {
                 </select>
               </div>
             </div>
-            <p className="cro-note mb-3 text-xs text-slate-500">{data.revenue_note}</p>
+            <p className="cro-note mb-3 text-xs text-slate-500">{data.revenue_note} Click any page for its deep dive.</p>
             {rows.length === 0 ? (
               <p className="text-xs text-slate-400">No pages match.</p>
             ) : (
@@ -276,7 +280,7 @@ function LandingPages() {
                   </thead>
                   <tbody>
                     {visible.map((p) => (
-                      <tr key={p.path} className={`border-b last:border-0 hover:bg-slate-50 ${p.bounce_flag ? "bg-red-50/40" : ""}`}>
+                      <tr key={p.path} onClick={() => setDeepPath(p.path)} title="Click for this page's deep dive (WoW / MoM)" className={`cursor-pointer border-b last:border-0 hover:bg-slate-50 ${p.bounce_flag ? "bg-red-50/40" : ""}`}>
                         <td className="max-w-[320px] py-3 pr-4">
                           <div className="flex items-center gap-2">
                             {p.bounce_flag && <AlertTriangle size={14} className="shrink-0 text-red-500" />}
@@ -321,6 +325,8 @@ function LandingPages() {
             )}
           </section>
 
+          <LandingCompare currency={currency} onOpen={setDeepPath} />
+
           <LandingGrids range={days} />
 
           {Object.keys(data.errors).length > 0 && (
@@ -330,6 +336,8 @@ function LandingPages() {
           )}
         </>
       )}
+
+      {deepPath && <LandingDeepDive path={deepPath} currency={currency} onClose={closeDeep} />}
     </div>
   );
 }

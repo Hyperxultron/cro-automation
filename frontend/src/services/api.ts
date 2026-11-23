@@ -545,6 +545,58 @@ export type LandingPagesData = {
   errors: Record<string, string>;
 };
 
+export type LandingWindowName = "week" | "prev_week" | "month" | "prev_month";
+
+export type LandingWindowMetrics = {
+  sessions: number;
+  bounce_rate: number | null;
+  added_to_cart_rate: number | null;
+  conversion_rate: number | null;
+  orders?: number | null;
+  revenue?: number | null;
+  revenue_per_session?: number | null;
+  aov?: number | null;
+};
+
+export type LandingWindowsMeta = Record<LandingWindowName, { first: string; last: string; label: string }>;
+
+export type LandingCompareRow = Record<LandingWindowName, LandingWindowMetrics> & {
+  path: string;
+  page_type: string;
+  week_enough: boolean;
+  month_enough: boolean;
+};
+
+export type LandingCompareData = {
+  windows: LandingWindowsMeta;
+  wow_label: string;
+  mom_label: string;
+  min_week: number;
+  min_month: number;
+  revenue_available: boolean;
+  pages: LandingCompareRow[];
+  errors: Record<string, string>;
+};
+
+export type LandingDeepSplit = Partial<Record<LandingWindowName, LandingWindowMetrics>> & { label: string };
+
+export type LandingDeepDive = {
+  path: string;
+  page_type: string;
+  windows: LandingWindowsMeta;
+  min_week: number;
+  min_month: number;
+  revenue_available: boolean;
+  metrics: Record<LandingWindowName, LandingWindowMetrics>;
+  daily: ({ date: string } & LandingWindowMetrics)[];
+  sources: LandingDeepSplit[];
+  devices: LandingDeepSplit[];
+  countries: LandingDeepSplit[];
+  clarity: ({ available: boolean; handle: string } & Partial<Record<LandingWindowName, number>>) | null;
+  insights: { tone: "good" | "bad" | "info"; text: string }[];
+  errors: Record<string, string>;
+};
+
 export type VitalRating = "good" | "needs_improvement" | "poor" | null;
 
 export type Vital = {
@@ -898,6 +950,9 @@ export const api = {
     request<LandingPagesData>(
       typeof range === "number" ? `/dashboard/landing-pages?days=${range}` : `/dashboard/landing-pages?period=${range}`,
     ),
+  landingCompare: () => request<LandingCompareData>("/dashboard/landing-compare"),
+  landingDeepDive: (path: string) =>
+    request<LandingDeepDive>(`/dashboard/landing-deep-dive?path=${encodeURIComponent(path)}`),
   productAnalytics: (days = 28) => request<ProductAnalyticsData>(`/dashboard/product-analytics?days=${days}`),
   productPerformance: (days = 30) =>
     request<{ days: number; products: ProductPerformance[] }>(`/dashboard/product-performance?days=${days}`),

@@ -32,6 +32,7 @@ from order_health import fetch_order_health
 from product_groups import fetch_product_analytics
 from landing import fetch_landing_pages
 from landing_grids import fetch_landing_grids
+from landing_compare import fetch_landing_compare, fetch_landing_deep_dive
 from site_health import fetch_site_health
 from cart_extras import fetch_cart_extras
 from overview import fetch_overview
@@ -598,6 +599,35 @@ def landing_pages(
         return fetch_landing_pages(store, days=days, period=period)
     except Exception as exc:
         logger.exception("Landing pages failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+@router.get("/landing-compare")
+def landing_compare(
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Every landing page: this week vs last week (WoW) and last 30 days vs the 30 before (MoM)."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_landing_compare(store)
+    except Exception as exc:
+        logger.exception("Landing compare failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+@router.get("/landing-deep-dive")
+def landing_deep_dive(
+    path: str = Query(..., min_length=1, max_length=500),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """One landing page in depth: WoW / MoM metrics, daily trend, sources, devices, countries, Clarity views."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_landing_deep_dive(db, store, path)
+    except Exception as exc:
+        logger.exception("Landing deep dive failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 
