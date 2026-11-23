@@ -3,7 +3,7 @@ import LandingGrids from "./LandingGrids";
 import LandingCompare from "./LandingCompare";
 import LandingDaily from "./LandingDaily";
 import LandingDeepDive from "./LandingDeepDive";
-import { AlertTriangle, Info, MonitorSmartphone, Route, Search, Share2 } from "lucide-react";
+import { AlertTriangle, MonitorSmartphone, Route, Search, Share2 } from "lucide-react";
 import { api, type LandingRange, formatMoney, type DashboardSummary, type LandingPagesData, type LandingSplitRow } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
 import { HELP } from "../../components/helpText";
@@ -94,6 +94,18 @@ function SplitTable({ title, help, icon, rows, minSessions, period, showShare = 
   );
 }
 
+type TabKey = "pages" | "compare" | "daily" | "breakdown" | "grids";
+// Priority order: the page list first, then how pages moved, then splits.
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "pages", label: "1. All landing pages" },
+  { key: "compare", label: "2. Week / Month compare" },
+  { key: "daily", label: "3. Date-wise" },
+  { key: "breakdown", label: "4. Page type, source, device" },
+  { key: "grids", label: "5. Page × source grids" },
+];
+
+const pathLabel = (p: string) => (p === "/" ? "/ (homepage)" : p);
+
 const RANGES: { key: LandingRange; label: string }[] = [
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
@@ -148,25 +160,46 @@ function LandingPages() {
     return [...list].sort((a, b) => ((b[sort] ?? -Infinity) as number) - ((a[sort] ?? -Infinity) as number));
   }, [data, typeFilter, flaggedOnly, search, sort]);
 
-  const visible = showAll ? rows : rows.slice(0, 25);
+  const visible = showAll ? rows : rows.slice(0, 15);
+  const worstCvr = useMemo(
+    () => (data?.pages ?? [])
+      .filter((p) => p.conversion_change_pts != null && p.conversion_change_pts < 0)
+      .sort((a, b) => (a.conversion_change_pts ?? 0) - (b.conversion_change_pts ?? 0))[0] ?? null,
+    [data],
+  );
+  const [tab, setTabState] = useState<TabKey>(() => {
+    const t = localStorage.getItem("landingTab") as TabKey | null;
+    return t && TABS.some((x) => x.key === t) ? t : "pages";
+  });
+  const [seen, setSeen] = useState<Set<TabKey>>(() => new Set([tab]));
+  const setTab = (t: TabKey) => {
+    setTabState(t);
+    setSeen((s) => (s.has(t) ? s : new Set(s).add(t)));
+    localStorage.setItem("landingTab", t);
+  };
+  const fixedWindow = tab === "compare" || tab === "daily";
   const closeDeep = useCallback(() => setDeepPath(null), []);
   const minSessions = data?.min_sessions ?? 100;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="space-y-4">
+      {/* 1. Header + period */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm text-slate-400">Main / Analytics</p>
-          <h2 className="text-2xl font-bold text-slate-900">Landing Pages &amp; Bounce</h2>
+          <h2 className="text-2xl font-bold text-slate-900">Landing Pages &amp; Bounce<InfoTip text={`${data?.bounce_definition ?? ""} Pages with fewer than ${minSessions} sessions are marked "Too few sessions" because their rates jump around too much to judge.`} /></h2>
           <p className="mt-1 text-sm text-slate-500">
-            {data ? <>{data.window_label} · compared with {data.compare_label}</> : "Where visitors land, which pages lose them, and which pages bring orders."}
+            {fixedWindow
+              ? "This tab uses its own fixed windows (complete days only)."
+              : data ? <>{data.window_label} · changes vs {data.compare_label}</> : "Where visitors land, which pages lose them, and which pages bring orders."}
           </p>
         </div>
-        <div className="flex rounded-xl border bg-white p-1 text-sm">
+        <div className={`flex rounded-xl border bg-white p-1 text-sm ${fixedWindow ? "opacity-40" : ""}`} title={fixedWindow ? "Not used on this tab" : undefined}>
           {RANGES.map((r) => (
             <button
               key={r.key}
               onClick={() => pickDays(r.key)}
+              disabled={fixedWindow}
               className={`rounded-lg px-3 py-1.5 font-medium ${days === r.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
             >
               {r.label}
@@ -176,62 +209,66 @@ function LandingPages() {
       </div>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-
-      {data && (
-        <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800">
-          <Info size={15} className="mt-0.5 shrink-0" />
-          <span>
-            {data.bounce_definition} Pages with fewer than {minSessions} sessions are marked "Too few sessions" because their rates jump around too much to judge.
-          </span>
-        </div>
-      )}
-
       {loading && !data && (
-        <p className="text-sm text-slate-400">
-          Loading {RANGES.find((r) => r.key === days)?.label ?? ""} from Shopify…
-        </p>
+        <p className="text-sm text-slate-400">Loading {RANGES.find((r) => r.key === days)?.label ?? ""} from Shopify…</p>
       )}
 
       {data && (
         <>
-          <div className="rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm text-slate-700">
-            <b className="text-blue-700">Showing: {data.window_label}</b>
-            <span className="text-slate-500"> · changes (pts) are vs {data.compare_label}</span>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border bg-white p-5 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">Landing pages with visits</p>
-              <p className="mt-2 text-2xl font-bold text-slate-900">{data.pages.length.toLocaleString()}</p>
-              <p className="cro-note mt-1 text-xs text-slate-400">{data.pages.filter((p) => !p.too_few_sessions).length} with {minSessions}+ sessions</p>
-            </div>
+          {/* 2. Key numbers - what needs attention first */}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <button
-              onClick={() => setFlaggedOnly((v) => !v)}
-              className={`rounded-2xl border bg-white p-5 text-left shadow-sm transition hover:border-red-200 ${flaggedOnly ? "border-red-300 ring-2 ring-red-100" : ""}`}
+              onClick={() => { setTab("pages"); setFlaggedOnly((v) => !v); }}
+              className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-red-200 ${flaggedOnly ? "border-red-300 ring-2 ring-red-100" : ""}`}
             >
               <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                 <AlertTriangle size={14} className="text-red-500" /> Bounce worse than usual
               </p>
-              <p className={`mt-2 text-2xl font-bold ${flaggedCount ? "text-red-600" : "text-slate-900"}`}>{flaggedCount}</p>
-              <p className="cro-note mt-1 text-xs text-slate-400">
-                pages {data.bounce_flag_pts}+ pts above their own previous period · {flaggedOnly ? "showing only these" : "click to show only these"}
+              <p className={`mt-1 text-2xl font-bold ${flaggedCount ? "text-red-600" : "text-slate-900"}`}>{flaggedCount}</p>
+              <p className="cro-note text-xs text-slate-400">{data.bounce_flag_pts}+ pts above previous period · {flaggedOnly ? "showing only these" : "click to filter"}</p>
+            </button>
+            <button
+              onClick={() => worstCvr && setDeepPath(worstCvr.path)}
+              disabled={!worstCvr}
+              className="rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-red-200"
+            >
+              <p className="text-xs font-medium text-slate-500">Biggest conversion drop</p>
+              <p className="mt-1 truncate text-lg font-bold text-slate-900" title={worstCvr?.path}>{worstCvr ? pathLabel(worstCvr.path) : "None"}</p>
+              <p className="cro-note text-xs text-slate-400">
+                {worstCvr ? <><span className="text-red-600">{ptsBoth(worstCvr.conversion_change_pts, worstCvr.conversion_rate)}</span> · click for deep dive</> : "no page dropped with enough sessions"}
               </p>
             </button>
-            <div className="rounded-2xl border bg-white p-5 shadow-sm">
+            <button
+              onClick={() => data.pages[0] && setDeepPath(data.pages[0].path)}
+              className="rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-blue-200"
+            >
               <p className="text-xs font-medium text-slate-500">Top landing page</p>
-              <p className="mt-2 truncate text-lg font-bold text-slate-900" title={data.pages[0]?.path}>{data.pages[0]?.path ?? "—"}</p>
-              <p className="cro-note mt-1 text-xs text-slate-400">
-                {data.pages[0] ? `${data.pages[0].sessions.toLocaleString()} sessions · bounce ${pct(data.pages[0].bounce_rate)}` : ""}
+              <p className="mt-1 truncate text-lg font-bold text-slate-900" title={data.pages[0]?.path}>{data.pages[0] ? pathLabel(data.pages[0].path) : "—"}</p>
+              <p className="cro-note text-xs text-slate-400">
+                {data.pages[0] ? `${data.pages[0].sessions.toLocaleString()} sessions · bounce ${pct(data.pages[0].bounce_rate)} · CVR ${pct(data.pages[0].conversion_rate)}` : ""}
               </p>
+            </button>
+            <div className="rounded-2xl border bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium text-slate-500">Landing pages with visits</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{data.pages.length.toLocaleString()}</p>
+              <p className="cro-note text-xs text-slate-400">{data.pages.filter((p) => !p.too_few_sessions).length} with {minSessions}+ sessions</p>
             </div>
           </div>
 
-          <SplitTable title="By page type" help={HELP.pageTypes} icon={<Route className="text-blue-500" size={20} />} rows={data.page_types} minSessions={minSessions} period={data.window_label} showShare />
-
-          <div className="grid gap-6 xl:grid-cols-2">
-            <SplitTable title="Bounce by traffic source" help={HELP.bounceBySource} icon={<Share2 className="text-blue-500" size={20} />} rows={data.by_source} minSessions={minSessions} period={data.window_label} />
-            <SplitTable title="Bounce by device" help={HELP.bounceByDevice} icon={<MonitorSmartphone className="text-blue-500" size={20} />} rows={data.by_device} minSessions={minSessions} period={data.window_label} />
+          {/* 3. Tabs, in priority order */}
+          <div className="sticky top-0 z-30 -mx-1 flex gap-1 overflow-x-auto rounded-xl border bg-white p-1 text-sm shadow-sm">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`whitespace-nowrap rounded-lg px-3 py-1.5 font-medium ${tab === t.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
+          <div className={tab === "pages" ? "" : "hidden"}>
           <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -319,18 +356,39 @@ function LandingPages() {
                 </table>
               </div>
             )}
-            {rows.length > 25 && (
+            {rows.length > 15 && (
               <button onClick={() => setShowAll((v) => !v)} className="mt-4 text-sm font-semibold text-blue-600 hover:underline">
-                {showAll ? "Show top 25" : `Show all ${rows.length} pages`}
+                {showAll ? "Show top 15" : `Show all ${rows.length} pages`}
               </button>
             )}
           </section>
+          </div>
 
-          <LandingCompare currency={currency} onOpen={setDeepPath} />
+          {seen.has("compare") && (
+            <div className={tab === "compare" ? "" : "hidden"}>
+              <LandingCompare currency={currency} onOpen={setDeepPath} />
+            </div>
+          )}
 
-          <LandingDaily currency={currency} onOpen={setDeepPath} />
+          {seen.has("daily") && (
+            <div className={tab === "daily" ? "" : "hidden"}>
+              <LandingDaily currency={currency} onOpen={setDeepPath} />
+            </div>
+          )}
 
-          <LandingGrids range={days} />
+          <div className={tab === "breakdown" ? "space-y-4" : "hidden"}>
+            <SplitTable title="By page type" help={HELP.pageTypes} icon={<Route className="text-blue-500" size={20} />} rows={data.page_types} minSessions={minSessions} period={data.window_label} showShare />
+            <div className="grid gap-4 xl:grid-cols-2">
+              <SplitTable title="Bounce by traffic source" help={HELP.bounceBySource} icon={<Share2 className="text-blue-500" size={20} />} rows={data.by_source} minSessions={minSessions} period={data.window_label} />
+              <SplitTable title="Bounce by device" help={HELP.bounceByDevice} icon={<MonitorSmartphone className="text-blue-500" size={20} />} rows={data.by_device} minSessions={minSessions} period={data.window_label} />
+            </div>
+          </div>
+
+          {seen.has("grids") && (
+            <div className={tab === "grids" ? "" : "hidden"}>
+              <LandingGrids range={days} />
+            </div>
+          )}
 
           {Object.keys(data.errors).length > 0 && (
             <p className="text-xs text-slate-400">
