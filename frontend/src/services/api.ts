@@ -204,20 +204,67 @@ export type RecAction = "fix" | "promote" | "test";
 export type RecStatus = "open" | "in_progress" | "done" | "ignored";
 export type RecRange = "yesterday" | 7 | 30;
 
+export type RecMetric = {
+  label: string;
+  value: string;
+  compare: string | null;
+  compare_label: string | null;
+  gap: string | null;
+  bad: boolean | null;
+};
+
+export type RecTest = {
+  hypothesis: string;
+  metric: string;
+  metric_key: ExperimentMetric;
+  target_lift_pct: number;
+  sessions_per_variant: number | null;
+  days_needed: number | null;
+  note: string | null;
+};
+
 export type Recommendation = {
   key: string;
   rank: number;
   kind: string;
+  area: string;
   action: RecAction;
   title: string;
   page: string;
+  page_path: string | null;
   segment: string;
+  diagnosis: string;
+  metrics: RecMetric[];
+  causes: string[];
+  steps: string[];
+  test: RecTest | null;
   evidence: string[];
   impact: number | null;
+  monthly_impact: number | null;
   impact_formula: string;
+  assumption: string | null;
+  window_days: number;
+  window_label: string;
+  confidence: "High" | "Medium" | "Low";
   effort: "Low" | "Medium" | "High";
+  priority_score: number;
   status: RecStatus;
   status_updated_at: string | null;
+};
+
+export type RecFunnelStep = {
+  key: string;
+  label: string;
+  value: number;
+  pct_of_sessions: number | null;
+  previous_pct_of_sessions: number | null;
+};
+
+export type RecFunnel = {
+  steps: RecFunnelStep[];
+  step_rates: Record<string, number | null>;
+  previous_step_rates: Record<string, number | null>;
+  weakest_step: string | null;
 };
 
 export type OverviewTrends = {
@@ -343,12 +390,20 @@ export type Recommendations = {
   window_label: string;
   compare_label: string;
   store_conversion_rate: number | null;
+  industry_conversion_rate: number;
   sessions: number;
   aov: number | null;
   orders: number;
   total_impact: number;
+  top5_monthly_impact: number;
+  total_monthly_impact: number;
+  top_keys: string[];
+  funnel: RecFunnel | null;
+  coverage: { source: string; ok: boolean }[];
+  areas: string[];
   recommendations: Recommendation[];
   errors: string[];
+  generated_at: string;
 };
 
 export type Benchmark = { value: number; label: string; source: string };
