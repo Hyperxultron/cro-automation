@@ -597,6 +597,18 @@ export type LandingDeepDive = {
   errors: Record<string, string>;
 };
 
+export type LandingDailyData = {
+  first: string;
+  last: string;
+  days: number;
+  dates: string[];
+  pages: { path: string; page_type: string; days: Record<string, LandingWindowMetrics> }[];
+  available_pages: { path: string; page_type: string; sessions_30d: number }[];
+  max_pages: number;
+  revenue_available: boolean;
+  errors: Record<string, string>;
+};
+
 export type VitalRating = "good" | "needs_improvement" | "poor" | null;
 
 export type Vital = {
@@ -951,6 +963,8 @@ export const api = {
       typeof range === "number" ? `/dashboard/landing-pages?days=${range}` : `/dashboard/landing-pages?period=${range}`,
     ),
   landingCompare: () => request<LandingCompareData>("/dashboard/landing-compare"),
+  landingDaily: (days: number, paths?: string[]) =>
+    request<LandingDailyData>(`/dashboard/landing-daily?days=${days}${paths?.length ? `&paths=${encodeURIComponent(paths.join("|"))}` : ""}`),
   landingDeepDive: (path: string) =>
     request<LandingDeepDive>(`/dashboard/landing-deep-dive?path=${encodeURIComponent(path)}`),
   productAnalytics: (days = 28) => request<ProductAnalyticsData>(`/dashboard/product-analytics?days=${days}`),

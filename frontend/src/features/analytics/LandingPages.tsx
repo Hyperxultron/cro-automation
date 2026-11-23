@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import LandingGrids from "./LandingGrids";
 import LandingCompare from "./LandingCompare";
+import LandingDaily from "./LandingDaily";
 import LandingDeepDive from "./LandingDeepDive";
 import { AlertTriangle, Info, MonitorSmartphone, Route, Search, Share2 } from "lucide-react";
 import { api, type LandingRange, formatMoney, type DashboardSummary, type LandingPagesData, type LandingSplitRow } from "../../services/api";
@@ -326,6 +327,8 @@ function LandingPages() {
           </section>
 
           <LandingCompare currency={currency} onOpen={setDeepPath} />
+
+          <LandingDaily currency={currency} onOpen={setDeepPath} />
 
           <LandingGrids range={days} />
 

@@ -146,6 +146,7 @@ def _base(store: models.Store) -> dict:
 
     page_type: dict[str, str] = {}
     raw_path: dict[str, tuple[str, int]] = {}   # normalised path -> (raw path with most sessions, sessions)
+    raw_sales_path: dict[str, tuple[str, float]] = {}  # same for the sales table's order landing page
     sessions: dict[str, dict[str, dict]] = {}
     sales: dict[str, dict[str, dict]] = {}
     sales_ok: dict[str, bool] = {}
@@ -170,8 +171,12 @@ def _base(store: models.Store) -> dict:
         for r in results.get(f"o_{name}") or []:
             if r.get("order_landing_page_path") is None:
                 continue
-            s = sw.setdefault(norm_path(r["order_landing_page_path"]), {"revenue": 0.0, "orders": 0})
-            s["revenue"] += _f(r.get("total_sales")) or 0.0
+            np_ = norm_path(r["order_landing_page_path"])
+            s = sw.setdefault(np_, {"revenue": 0.0, "orders": 0})
+            rev = _f(r.get("total_sales")) or 0.0
+            s["revenue"] += rev
+            if rev > raw_sales_path.get(np_, ("", -1.0))[1]:
+                raw_sales_path[np_] = (str(r["order_landing_page_path"]), rev)
             s["orders"] += _i(r.get("orders"))
         sales[name] = sw
 
@@ -179,6 +184,7 @@ def _base(store: models.Store) -> dict:
         "windows": w,
         "page_type": page_type,
         "raw_path": {p: v[0] for p, v in raw_path.items()},
+        "raw_sales_path": {p: v[0] for p, v in raw_sales_path.items()},
         "sessions": sessions,
         "sales": sales,
         "sales_ok": sales_ok,
@@ -421,3 +427,121 @@ def fetch_landing_deep_dive(db: Session, store: models.Store, path: str) -> dict
     }
     _deep_cache[key] = (time.time() + CACHE_SECONDS, result)
     return result
+
+
+# --------------------------------------------------------------------------- date-wise grid
+
+DAILY_DAYS = 60       # always pull 60 complete days per page, then slice
+MAX_DAILY_PAGES = 15
+_daily_cache: dict = {}
+
+
+def _page_daily(store: models.Store, base: dict, path: str, first: date, last: date) -> tuple[dict[str, dict], dict]:
+    """{date: metrics} for one page, 60 days, cached per page per day."""
+    key = (store.store_url, path, last.isoformat())
+    hit = _daily_cache.get(key)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    H = HUMAN_SESSIONS_FILTER
+    raw = base["raw_path"].get(path, path)
+    queries = {
+        "s": f"FROM sessions SHOW {SESSION_METRICS} {H}AND landing_page_path = '{_q(raw)}' TIMESERIES day {_since(first, last)} ORDER BY day ASC",
+    }
+    raw_sales = base["raw_sales_path"].get(path)
+    if raw_sales:
+        queries["o"] = (
+            f"FROM sales SHOW total_sales, orders WHERE order_landing_page_path = '{_q(raw_sales)}' "
+            f"TIMESERIES day {_since(first, last)} ORDER BY day ASC"
+        )
+    errors = {}
+    rows = {}
+    for name, q in queries.items():
+        try:
+            rows[name] = _run(store, q)
+        except Exception as exc:
+            logger.warning("Landing daily %s %s failed: %s", path, name, exc)
+            errors[f"{path} ({'sessions' if name == 's' else 'sales'})"] = str(exc)[:200]
+            rows[name] = None
+    sales_ok = rows.get("o") is not None or not raw_sales  # no orders ever = 0 revenue, not unknown
+
+    by_day: dict[str, dict] = {}
+    for r in rows.get("s") or []:
+        d = str(r.get("day") or "")[:10]
+        if d:
+            acc = _acc()
+            _add(acc, r)
+            by_day[d] = _rates(acc)
+    sales_by_day: dict[str, dict] = {}
+    for r in rows.get("o") or []:
+        d = str(r.get("day") or "")[:10]
+        if d:
+            s = sales_by_day.setdefault(d, {"revenue": 0.0, "orders": 0})
+            s["revenue"] += _f(r.get("total_sales")) or 0.0
+            s["orders"] += _i(r.get("orders"))
+    out = {}
+    d = first
+    while d <= last:
+        k = d.isoformat()
+        out[k] = _with_sales(by_day.get(k, _rates(None)), sales_by_day.get(k), sales_ok and rows.get("s") is not None)
+        d += timedelta(days=1)
+    val = (out, errors)
+    # don't keep a failed load for 10 minutes
+    _daily_cache[key] = (time.time() + (CACHE_SECONDS if not errors else 60), val)
+    return val
+
+
+def fetch_landing_daily(store: models.Store, paths: list[str] | None, days: int = 30) -> dict:
+    """
+    Excel-style grid: one row per date, one column per landing page.
+    paths None/empty -> the top pages by last-30-day sessions.
+    """
+    base = _base(store)
+    days = max(1, min(days, DAILY_DAYS))
+    last = datetime.now(_tz(store)).date() - timedelta(days=1)
+    first60 = last - timedelta(days=DAILY_DAYS - 1)
+    first = last - timedelta(days=days - 1)
+
+    ranked = sorted(base["sessions"]["month"].items(), key=lambda kv: -kv[1]["sessions"])
+    if paths:
+        wanted = []
+        for p in paths:
+            n = norm_path(p)
+            if n not in wanted:
+                wanted.append(n)
+        wanted = wanted[:MAX_DAILY_PAGES]
+    else:
+        wanted = [p for p, _ in ranked[:8]]
+
+    errors: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        res = list(pool.map(lambda p: _page_daily(store, base, p, first60, last), wanted))
+
+    dates = []
+    d = last
+    while d >= first:
+        dates.append(d.isoformat())
+        d -= timedelta(days=1)
+
+    columns = []
+    for p, (daily, errs) in zip(wanted, res):
+        errors.update(errs)
+        columns.append({
+            "path": p,
+            "page_type": base["page_type"].get(p, "Other"),
+            "days": {k: daily[k] for k in dates if k in daily},
+        })
+
+    return {
+        "first": first.isoformat(),
+        "last": last.isoformat(),
+        "days": days,
+        "dates": dates,  # newest first
+        "pages": columns,
+        "available_pages": [
+            {"path": p, "page_type": base["page_type"].get(p, "Other"), "sessions_30d": v["sessions"]}
+            for p, v in ranked[:MAX_PAGES]
+        ],
+        "max_pages": MAX_DAILY_PAGES,
+        "revenue_available": all(base["sales_ok"].values()),
+        "errors": errors,
+    }
