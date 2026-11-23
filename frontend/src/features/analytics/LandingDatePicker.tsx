@@ -97,7 +97,7 @@ function LandingDatePicker({ value, onChange }: { value: PickedDates | null; onC
             <button disabled={!!bad} onClick={() => apply({ start, end })} className="rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white disabled:opacity-40">Apply</button>
           </div>
           <p className="mt-3 text-[11px] leading-snug text-slate-400">
-            Tabs 1, 4 and 5 show exactly these dates (vs the same number of days before). Week / Month compare, Date-wise and the deep dive end on the "To" date.
+            Tabs 1, 5 and 6 show exactly these dates (vs the same number of days before). Week / Month compare, Funnel, Date-wise and the deep dive end on the "To" date.
           </p>
         </div>
       )}

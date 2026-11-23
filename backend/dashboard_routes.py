@@ -32,7 +32,7 @@ from order_health import fetch_order_health
 from product_groups import fetch_product_analytics
 from landing import fetch_landing_pages
 from landing_grids import fetch_landing_grids
-from landing_compare import fetch_landing_compare, fetch_landing_daily, fetch_landing_deep_dive
+from landing_compare import fetch_landing_compare, fetch_landing_daily, fetch_landing_deep_dive, fetch_landing_funnel
 from site_health import fetch_site_health
 from cart_extras import fetch_cart_extras
 from overview import fetch_overview
@@ -651,6 +651,21 @@ def landing_daily(
         return fetch_landing_daily(store, wanted or None, days=days, end=end)
     except Exception as exc:
         logger.exception("Landing daily failed")
+        raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
+
+
+@router.get("/landing-funnel")
+def landing_funnel(
+    end: date | None = Query(None, description="Last day of the windows (default yesterday)"),
+    shop: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Funnel per landing page (sessions -> product view -> cart -> checkout -> purchase), WoW and MoM."""
+    store = _get_store(db, shop)
+    try:
+        return fetch_landing_funnel(store, end=end)
+    except Exception as exc:
+        logger.exception("Landing funnel failed")
         raise HTTPException(status_code=502, detail=f"Shopify analytics error: {str(exc)[:300]}")
 
 

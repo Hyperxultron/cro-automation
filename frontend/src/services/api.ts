@@ -583,6 +583,33 @@ export type LandingCompareData = {
 
 export type LandingDeepSplit = Partial<Record<LandingWindowName, LandingWindowMetrics>> & { label: string };
 
+export type LandingFunnelStep = {
+  key: "sessions" | "viewed_product" | "added_to_cart" | "reached_checkout" | "completed_checkout";
+  label: string;
+  count: number;
+  pct_of_sessions: number | null;
+  pct_of_previous: number | null;
+};
+
+export type LandingFunnelView = { sessions: number; steps: LandingFunnelStep[] };
+
+export type LandingFunnelRow = Record<LandingWindowName, LandingFunnelView> & {
+  path: string;
+  page_type: string;
+  week_enough: boolean;
+  month_enough: boolean;
+};
+
+export type LandingFunnelData = {
+  windows: LandingWindowsMeta;
+  steps: { key: LandingFunnelStep["key"]; label: string }[];
+  product_views_available: boolean;
+  min_week: number;
+  min_month: number;
+  pages: LandingFunnelRow[];
+  errors: Record<string, string>;
+};
+
 export type LandingDeepDive = {
   path: string;
   page_type: string;
@@ -596,6 +623,7 @@ export type LandingDeepDive = {
   devices: LandingDeepSplit[];
   countries: LandingDeepSplit[];
   clarity: ({ available: boolean; handle: string } & Partial<Record<LandingWindowName, number>>) | null;
+  funnel?: ({ product_views_available: boolean } & Record<LandingWindowName, LandingFunnelView>) | null;
   insights: { tone: "good" | "bad" | "info"; text: string }[];
   errors: Record<string, string>;
 };
@@ -971,6 +999,8 @@ export const api = {
     request<LandingCompareData>(`/dashboard/landing-compare${end ? `?end=${end}` : ""}`),
   landingDaily: (days: number, paths?: string[], end?: string | null) =>
     request<LandingDailyData>(`/dashboard/landing-daily?days=${days}${paths?.length ? `&paths=${encodeURIComponent(paths.join("|"))}` : ""}${end ? `&end=${end}` : ""}`),
+  landingFunnel: (end?: string | null) =>
+    request<LandingFunnelData>(`/dashboard/landing-funnel${end ? `?end=${end}` : ""}`),
   landingDeepDive: (path: string, end?: string | null) =>
     request<LandingDeepDive>(`/dashboard/landing-deep-dive?path=${encodeURIComponent(path)}${end ? `&end=${end}` : ""}`),
   productAnalytics: (days = 28) => request<ProductAnalyticsData>(`/dashboard/product-analytics?days=${days}`),

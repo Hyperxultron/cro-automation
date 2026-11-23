@@ -5,6 +5,7 @@ import EChart, { FONT, tipBase, useOceanTheme } from "../../components/EChart";
 import { api, type LandingDeepDive as DeepData, type LandingDeepSplit, type LandingWindowMetrics, type LandingWindowName } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
 import LandingPageDays from "./LandingPageDays";
+import LandingFunnelSteps from "./LandingFunnelSteps";
 import { Delta, fmtValue, pagePathLabel, type DeltaKind } from "./landingDelta";
 
 // Deep dive for one landing page: WoW / MoM table of every metric, 60-day
@@ -341,6 +342,8 @@ function LandingDeepDive({ path, currency, onClose, end = null }: { path: string
                 {clarity?.available && " Clarity views count all visits that opened this product page (not only landings), bots removed."}
               </p>
             </Card>
+
+            {data.funnel && <LandingFunnelSteps funnel={data.funnel} windows={data.windows} minWeek={data.min_week} minMonth={data.min_month} />}
 
             <div className="xl:hidden"><LandingPageDays path={path} currency={currency} end={end} /></div>
 

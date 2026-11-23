@@ -410,6 +410,8 @@ def fetch_landing_deep_dive(db: Session, store: models.Store, path: str, end: da
     devices = _split_rows(results, "dev", "session_device_type", WINDOWS)
     countries = _split_rows(results, "geo", "session_country_code", ("month", "prev_month"))[:10]
 
+    funnel = page_funnel(store, path, end)
+
     try:
         clarity = _clarity(db, store, path, w)
     except Exception as exc:
@@ -429,6 +431,7 @@ def fetch_landing_deep_dive(db: Session, store: models.Store, path: str, end: da
         "devices": devices,
         "countries": countries,
         "clarity": clarity,
+        "funnel": funnel,
         "insights": _insights(metrics, sources, devices),
         "errors": {**base["errors"], **errors},
     }
@@ -551,4 +554,129 @@ def fetch_landing_daily(store: models.Store, paths: list[str] | None, days: int 
         "max_pages": MAX_DAILY_PAGES,
         "revenue_available": all(base["sales_ok"].values()),
         "errors": errors,
+    }
+
+
+# --------------------------------------------------------------------------- funnel per landing page
+
+FUNNEL_SHOW = "sessions, sessions_with_cart_additions, sessions_that_reached_checkout, sessions_that_completed_checkout"
+FUNNEL_STEPS = [
+    ("sessions", "Sessions"),
+    ("viewed_product", "Viewed a product"),
+    ("added_to_cart", "Added to cart"),
+    ("reached_checkout", "Reached checkout"),
+    ("completed_checkout", "Purchased"),
+]
+_funnel_cache: dict = {}
+
+
+def _truthy(v) -> bool:
+    return str(v).strip().lower() in ("true", "1", "yes")
+
+
+def _funnel_base(store: models.Store, end: date | None = None) -> dict:
+    """{window: {path: {sessions, viewed_product, added_to_cart, reached_checkout, completed_checkout}}}"""
+    anchor = _anchor(store, end)
+    key = (store.store_url, datetime.now(_tz(store)).date().isoformat(), anchor.isoformat())
+    hit = _funnel_cache.get(key)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    w = compare_windows(store, end)
+    H = HUMAN_SESSIONS_FILTER
+    queries = {}
+    for name, (a, b) in w.items():
+        queries[f"f_{name}"] = f"FROM sessions SHOW {FUNNEL_SHOW} {H}GROUP BY landing_page_path {_since(a, b)} ORDER BY sessions DESC LIMIT 1000"
+        queries[f"pv_{name}"] = (
+            f"FROM sessions SHOW sessions {H}GROUP BY landing_page_path, session_viewed_product {_since(a, b)} ORDER BY sessions DESC LIMIT 2000"
+        )
+    results, errors = _parallel(store, queries)
+    out: dict[str, dict[str, dict]] = {}
+    pv_ok = True
+    for name in WINDOWS:
+        pages: dict[str, dict] = {}
+        for r in results.get(f"f_{name}") or []:
+            if r.get("landing_page_path") is None:
+                continue
+            f = pages.setdefault(norm_path(r["landing_page_path"]), {k: 0 for k, _ in FUNNEL_STEPS})
+            f["sessions"] += _i(r.get("sessions"))
+            f["added_to_cart"] += _i(r.get("sessions_with_cart_additions"))
+            f["reached_checkout"] += _i(r.get("sessions_that_reached_checkout"))
+            f["completed_checkout"] += _i(r.get("sessions_that_completed_checkout"))
+        if results.get(f"pv_{name}") is None:
+            pv_ok = False
+        for r in results.get(f"pv_{name}") or []:
+            if r.get("landing_page_path") is None or not _truthy(r.get("session_viewed_product")):
+                continue
+            f = pages.get(norm_path(r["landing_page_path"]))
+            if f is not None:
+                f["viewed_product"] += _i(r.get("sessions"))
+        out[name] = pages
+    if results.get("f_month") is None and results.get("f_week") is None:
+        raise RuntimeError(errors.get("f_month") or "Shopify funnel query failed")
+    val = {"windows": w, "pages": out, "product_views_available": pv_ok, "errors": errors}
+    _funnel_cache[key] = (time.time() + (CACHE_SECONDS if not errors else 60), val)
+    return val
+
+
+def _funnel_view(f: dict | None, pv_ok: bool) -> dict:
+    """Counts + % of sessions + % of the step before, for one page and window."""
+    f = f or {k: 0 for k, _ in FUNNEL_STEPS}
+    s = f["sessions"]
+    steps, prev = [], None
+    for k, label in FUNNEL_STEPS:
+        if k == "viewed_product" and not pv_ok:
+            continue
+        v = f[k]
+        steps.append({
+            "key": k,
+            "label": label,
+            "count": v,
+            "pct_of_sessions": round(v / s * 100, 2) if s else None,
+            "pct_of_previous": round(v / prev * 100, 1) if prev else None,
+        })
+        prev = v
+    return {"sessions": s, "steps": steps}
+
+
+def page_funnel(store: models.Store, path: str, end: date | None = None) -> dict | None:
+    try:
+        fb = _funnel_base(store, end)
+    except Exception as exc:
+        logger.warning("Landing funnel failed: %s", exc)
+        return None
+    return {
+        "product_views_available": fb["product_views_available"],
+        **{name: _funnel_view(fb["pages"][name].get(path), fb["product_views_available"]) for name in WINDOWS},
+    }
+
+
+def fetch_landing_funnel(store: models.Store, end: date | None = None) -> dict:
+    """Funnel for every landing page, this week / last week / last 30 / previous 30."""
+    fb = _funnel_base(store, end)
+    w = fb["windows"]
+    month = fb["pages"]["month"]
+    ranked = sorted(set(month) | set(fb["pages"]["week"]), key=lambda p: -(month.get(p, {}).get("sessions", 0)))[:MAX_PAGES]
+    page_type = {}
+    try:
+        page_type = _base(store, end)["page_type"]
+    except Exception:
+        pass
+    rows = []
+    for p in ranked:
+        views = {name: _funnel_view(fb["pages"][name].get(p), fb["product_views_available"]) for name in WINDOWS}
+        rows.append({
+            "path": p,
+            "page_type": page_type.get(p, "Other"),
+            **views,
+            "week_enough": views["week"]["sessions"] >= MIN_WEEK and views["prev_week"]["sessions"] >= MIN_WEEK,
+            "month_enough": views["month"]["sessions"] >= MIN_MONTH and views["prev_month"]["sessions"] >= MIN_MONTH,
+        })
+    return {
+        "windows": _window_meta(w),
+        "steps": [{"key": k, "label": l} for k, l in FUNNEL_STEPS if k != "viewed_product" or fb["product_views_available"]],
+        "product_views_available": fb["product_views_available"],
+        "min_week": MIN_WEEK,
+        "min_month": MIN_MONTH,
+        "pages": rows,
+        "errors": fb["errors"],
     }

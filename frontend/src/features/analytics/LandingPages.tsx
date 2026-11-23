@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import LandingGrids from "./LandingGrids";
 import LandingCompare from "./LandingCompare";
 import LandingDaily from "./LandingDaily";
+import LandingFunnel from "./LandingFunnel";
 import LandingDeepDive from "./LandingDeepDive";
 import LandingDatePicker from "./LandingDatePicker";
 import { AlertTriangle, MonitorSmartphone, Route, Search, Share2 } from "lucide-react";
@@ -95,14 +96,15 @@ function SplitTable({ title, help, icon, rows, minSessions, period, showShare = 
   );
 }
 
-type TabKey = "pages" | "compare" | "daily" | "breakdown" | "grids";
+type TabKey = "pages" | "compare" | "funnel" | "daily" | "breakdown" | "grids";
 // Priority order: the page list first, then how pages moved, then splits.
 const TABS: { key: TabKey; label: string }[] = [
   { key: "pages", label: "1. All landing pages" },
   { key: "compare", label: "2. Week / Month compare" },
-  { key: "daily", label: "3. Date-wise" },
-  { key: "breakdown", label: "4. Page type, source, device" },
-  { key: "grids", label: "5. Page × source grids" },
+  { key: "funnel", label: "3. Funnel by page" },
+  { key: "daily", label: "4. Date-wise" },
+  { key: "breakdown", label: "5. Page type, source, device" },
+  { key: "grids", label: "6. Page × source grids" },
 ];
 
 const pathLabel = (p: string) => (p === "/" ? "/ (homepage)" : p);
@@ -187,7 +189,7 @@ function LandingPages() {
     setSeen((s) => (s.has(t) ? s : new Set(s).add(t)));
     localStorage.setItem("landingTab", t);
   };
-  const fixedWindow = tab === "compare" || tab === "daily";
+  const fixedWindow = tab === "compare" || tab === "daily" || tab === "funnel";
   const closeDeep = useCallback(() => setDeepPath(null), []);
   const minSessions = data?.min_sessions ?? 100;
 
@@ -380,6 +382,12 @@ function LandingPages() {
           {seen.has("compare") && (
             <div className={tab === "compare" ? "" : "hidden"}>
               <LandingCompare currency={currency} onOpen={setDeepPath} end={dates?.end} />
+            </div>
+          )}
+
+          {seen.has("funnel") && (
+            <div className={tab === "funnel" ? "" : "hidden"}>
+              <LandingFunnel onOpen={setDeepPath} end={dates?.end} />
             </div>
           )}
 
