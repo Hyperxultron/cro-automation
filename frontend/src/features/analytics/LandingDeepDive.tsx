@@ -4,6 +4,7 @@ import { Globe, Lightbulb, MonitorSmartphone, MousePointerClick, Share2, Trendin
 import EChart, { FONT, tipBase, useOceanTheme } from "../../components/EChart";
 import { api, type LandingDeepDive as DeepData, type LandingDeepSplit, type LandingWindowMetrics, type LandingWindowName } from "../../services/api";
 import InfoTip from "../../components/InfoTip";
+import LandingPageDays from "./LandingPageDays";
 import { Delta, fmtValue, pagePathLabel, type DeltaKind } from "./landingDelta";
 
 // Deep dive for one landing page: WoW / MoM table of every metric, 60-day
@@ -336,6 +337,8 @@ function LandingDeepDive({ path, currency, onClose, end = null }: { path: string
                 {clarity?.available && " Clarity views count all visits that opened this product page (not only landings), bots removed."}
               </p>
             </Card>
+
+            <LandingPageDays path={path} currency={currency} end={end} />
 
             <Card icon={<TrendingUp className="text-blue-500" size={18} />} title="Daily trend (last 60 days)" help="Top chart: sessions (bars) and conversion rate on its own zoomed-in scale. Thin line = each day, thick pink line = 7-day average (smooths out noisy days). Bottom chart: bounce and add-to-cart rate.">
               <TrendChart daily={data.daily} />
